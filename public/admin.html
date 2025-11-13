@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Admin Panel</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        h2 { margin-top: 40px; }
+        input, button, select { padding: 8px; margin: 5px 0; display: block; }
+        .box { border: 1px solid #ccc; padding: 20px; margin-bottom: 30px; }
+    </style>
+</head>
+<body>
+
+<h1>Admin Bereich</h1>
+
+<p><b>Du bist eingeloggt als Admin.</b></p>
+
+<!-- Klassen -->
+<div class="box">
+    <h2>Klasse anlegen</h2>
+    <input id="className" placeholder="Klassenname">
+    <button onclick="createClass()">Erstellen</button>
+    <p id="classResult"></p>
+</div>
+
+<!-- Schüler -->
+<div class="box">
+    <h2>Schüler anlegen</h2>
+    <input id="studentName" placeholder="Name des Schülers">
+    <input id="studentPass" placeholder="Passwort">
+    <button onclick="createStudent()">Erstellen</button>
+    <p id="studentResult"></p>
+</div>
+
+<!-- Missionen -->
+<div class="box">
+    <h2>Mission anlegen</h2>
+    <input id="missionTitle" placeholder="Titel">
+    <input id="missionDesc" placeholder="Beschreibung">
+    <input id="missionXP" placeholder="XP" type="number">
+    <button onclick="createMission()">Erstellen</button>
+    <p id="missionResult"></p>
+</div>
+
+
+<script>
+async function createClass() {
+    const name = document.getElementById("className").value;
+    const r = await fetch("/api/admin/class/create", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ name })
+    });
+
+    const data = await r.json();
+    document.getElementById("classResult").innerText = data.success ? "Erstellt." : data.error;
+}
+
+async function createStudent() {
+    const name = document.getElementById("studentName").value;
+    const password = document.getElementById("studentPass").value;
+
+    const r = await fetch("/api/admin/student/create", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ name, password })
+    });
+
+    const data = await r.json();
+    document.getElementById("studentResult").innerText = data.success ? "Erstellt." : data.error;
+}
+
+async function createMission() {
+    const title = document.getElementById("missionTitle").value;
+    const description = document.getElementById("missionDesc").value;
+    const xp = parseInt(document.getElementById("missionXP").value);
+
+    const r = await fetch("/api/admin/mission/create", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ title, description, xp })
+    });
+
+    const data = await r.json();
+    document.getElementById("missionResult").innerText = data.success ? "Erstellt." : data.error;
+}
+</script>
+
+</body>
+</html>
