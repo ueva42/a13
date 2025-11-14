@@ -2,125 +2,232 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Admin</title>
+<title>Temple of Logic – Admin</title>
+
 <style>
-body { background:#0f0f14; color:#f5f5f5; font-family:Arial; padding:1rem; }
-h1 { color:#80f0d0; }
-.box { background:#14141c; padding:1rem; border-radius:10px; margin-bottom:2rem; }
-button { cursor:pointer; }
+    body {
+        background: #0f0f14;
+        color: #f5f5f5;
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 2rem;
+    }
+
+    h1 {
+        color: #80f0d0;
+        margin-bottom: 1rem;
+    }
+
+    .logout-btn {
+        background: #6a4df4;
+        color: white;
+        border: none;
+        padding: 0.6rem 1rem;
+        border-radius: 6px;
+        cursor: pointer;
+        margin-bottom: 2rem;
+    }
+
+    .box {
+        background: #14141c;
+        padding: 1.5rem;
+        border-radius: 12px;
+        margin-bottom: 2.5rem;
+        box-shadow: 0 0 12px rgba(0,0,0,0.5);
+    }
+
+    h2 {
+        margin-top: 0;
+        color: #80f0d0;
+    }
+
+    input, textarea, select {
+        width: 100%;
+        padding: 0.5rem;
+        margin-bottom: 1rem;
+        background: #0f0f14;
+        color: white;
+        border: 1px solid #333;
+        border-radius: 6px;
+    }
+
+    button {
+        padding: 0.5rem 1rem;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+    }
+
+    .btn-primary {
+        background: #6a4df4;
+        color: white;
+    }
+
+    .btn-danger {
+        background: #3a1010;
+        color: #ffb3b3;
+    }
+
+    .entry {
+        padding: 0.6rem;
+        background: #1a1a24;
+        margin-bottom: 0.5rem;
+        border-radius: 6px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    img.mission-img {
+        width: 100px;
+        height: auto;
+        border-radius: 6px;
+        margin-top: 0.5rem;
+    }
 </style>
 </head>
+
 <body>
 
-<h1>Admin Bereich</h1>
-<button onclick="logout()">Logout</button>
+<h1>Adminbereich</h1>
 
-<!-- ===================== -->
+<button class="logout-btn" onclick="logout()">Logout</button>
+
+<!-- =========================== -->
 <!-- KLASSEN -->
-<!-- ===================== -->
+<!-- =========================== -->
 <div class="box">
-<h2>Klassen</h2>
+    <h2>Klassen</h2>
 
-<input id="class-name" placeholder="Neue Klasse">
-<button onclick="createClass()">Anlegen</button>
+    <input id="class-name" placeholder="Neue Klasse (z. B. 7a)">
+    <button class="btn-primary" onclick="createClass()">Anlegen</button>
 
-<div id="class-list"></div>
+    <div id="class-list" style="margin-top:1rem;"></div>
 </div>
 
-<!-- ===================== -->
+
+<!-- =========================== -->
 <!-- MISSIONEN -->
-<!-- ===================== -->
+<!-- =========================== -->
 <div class="box">
-<h2>Missionen</h2>
+    <h2>Missionen</h2>
 
-<form id="mission-form" enctype="multipart/form-data">
-<input name="title" placeholder="Titel"><br><br>
-<textarea name="description" placeholder="Beschreibung"></textarea><br><br>
-<input name="xp_reward" type="number" placeholder="XP"><br><br>
-<label><input type="checkbox" name="requires_upload"> Schüler müssen Bild hochladen</label><br><br>
-<input type="file" name="image"><br><br>
-<button type="submit">Mission anlegen</button>
-</form>
+    <form id="mission-form" enctype="multipart/form-data">
+        <input name="title" placeholder="Titel der Mission">
+        <input name="xp_reward" type="number" placeholder="XP">
+        <label style="display:block; margin-bottom:1rem;">
+            <input type="checkbox" name="requires_upload">
+            Schüler müssen ein Bild hochladen
+        </label>
+        <input type="file" name="image">
+        <button class="btn-primary" type="submit" style="margin-top:1rem;">Mission anlegen</button>
+    </form>
 
-<div id="mission-list"></div>
+    <div id="mission-list" style="margin-top:1rem;"></div>
 </div>
+
 
 <script>
-function logout() {
-  location.href = "login.html";
+// --------------------------------------------------
+// LOGIN SCHUTZ
+// --------------------------------------------------
+if (!localStorage.getItem("role")) {
+    location.href = "login.html";
+}
+if (localStorage.getItem("role") !== "admin") {
+    location.href = "login.html";
 }
 
-// -------------------
+function logout() {
+    localStorage.clear();
+    location.href = "login.html";
+}
+
+// --------------------------------------------------
 // KLASSEN
-// -------------------
+// --------------------------------------------------
 async function loadClasses() {
-  const r = await fetch("/api/admin/classes");
-  const data = await r.json();
+    const res = await fetch("/api/admin/classes");
+    const data = await res.json();
 
-  const div = document.getElementById("class-list");
-  div.innerHTML = "";
+    const box = document.getElementById("class-list");
+    box.innerHTML = "";
 
-  data.classes.forEach(c => {
-    div.innerHTML += `
-      <div>
-        ${c.name}
-        <button onclick="deleteClass(${c.id})">Löschen</button>
-      </div>`;
-  });
+    data.classes.forEach(c => {
+        box.innerHTML += `
+        <div class="entry">
+            ${c.name}
+            <button class="btn-danger" onclick="deleteClass(${c.id})">Löschen</button>
+        </div>`;
+    });
 }
 
 async function createClass() {
-  const name = document.getElementById("class-name").value;
-  await fetch("/api/admin/classes", {
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({name})
-  });
-  loadClasses();
+    const name = document.getElementById("class-name").value.trim();
+    if (!name) return;
+
+    await fetch("/api/admin/classes", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({name})
+    });
+
+    document.getElementById("class-name").value = "";
+    loadClasses();
 }
 
 async function deleteClass(id) {
-  await fetch("/api/admin/classes/" + id, { method:"DELETE" });
-  loadClasses();
+    await fetch(`/api/admin/classes/${id}`, { method:"DELETE" });
+    loadClasses();
 }
 
-// -------------------
-// MISSIONEN
-// -------------------
-async function loadMissions() {
-  const r = await fetch("/api/admin/missions");
-  const list = await r.json();
-  const div = document.getElementById("mission-list");
 
-  div.innerHTML = "";
-  list.forEach(m => {
-    div.innerHTML += `
-    <div style="margin-bottom:1rem;">
-      <b>${m.title}</b> (${m.xp_reward} XP)
-      <button onclick="deleteMission(${m.id})">Löschen</button><br>
-      ${m.image_url ? `<img src="${m.image_url}" width="100">` : ""}
-    </div>`;
-  });
+// --------------------------------------------------
+// MISSIONEN
+// --------------------------------------------------
+async function loadMissions() {
+    const res = await fetch("/api/admin/missions");
+    const missions = await res.json();
+
+    const box = document.getElementById("mission-list");
+    box.innerHTML = "";
+
+    missions.forEach(m => {
+        box.innerHTML += `
+        <div class="entry" style="flex-direction:column; align-items:flex-start;">
+            <div style="width:100%; display:flex; justify-content:space-between;">
+                <div><b>${m.title}</b> – ${m.xp_reward} XP</div>
+                <button class="btn-danger" onclick="deleteMission(${m.id})">Löschen</button>
+            </div>
+
+            ${m.image_url ? `<img class="mission-img" src="${m.image_url}">` : ""}
+        </div>`;
+    });
 }
 
 document.getElementById("mission-form").onsubmit = async (e) => {
-  e.preventDefault();
-  const fd = new FormData(e.target);
-  await fetch("/api/admin/missions", {
-    method:"POST",
-    body: fd
-  });
-  loadMissions();
+    e.preventDefault();
+
+    const fd = new FormData(e.target);
+    await fetch("/api/admin/missions", {
+        method: "POST",
+        body: fd
+    });
+
+    e.target.reset();
+    loadMissions();
 };
 
 async function deleteMission(id) {
-  await fetch("/api/admin/missions/" + id, { method:"DELETE" });
-  loadMissions();
+    await fetch(`/api/admin/missions/${id}`, { method:"DELETE" });
+    loadMissions();
 }
 
-// -------------------
+
+// --------------------------------------------------
 loadClasses();
 loadMissions();
 </script>
+
 </body>
 </html>

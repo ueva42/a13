@@ -1,6 +1,7 @@
-// ================================
-// server.js – Temple of Logic
-// ================================
+// ==========================================
+// server.js – Temple of Logic (AUTO-FIX VERSION)
+// ==========================================
+
 import express from "express";
 import fileUpload from "express-fileupload";
 import cors from "cors";
@@ -34,8 +35,13 @@ const __dirname = path.dirname(__filename);
 const uploadFolder = path.join(__dirname, "public", "uploads");
 if (!fs.existsSync(uploadFolder)) fs.mkdirSync(uploadFolder, { recursive: true });
 
-// MIGRATION --------------------------------
+// ------------------------------------------
+// MIGRATION (inkl. AUTO-FIX für Missions)
+// ------------------------------------------
 async function migrate() {
+  console.log("Starte Migration…");
+
+  // CLASSES
   await query(`
     CREATE TABLE IF NOT EXISTS classes (
       id SERIAL PRIMARY KEY,
@@ -43,6 +49,7 @@ async function migrate() {
     );
   `);
 
+  // USERS
   await query(`
     CREATE TABLE IF NOT EXISTS users (
       id SERIAL PRIMARY KEY,
@@ -56,11 +63,26 @@ async function migrate() {
     );
   `);
 
+  // *** MISSIONS AUTO-FIX ***
+  // DROP alte Tabelle falls falsche Spalten existieren
+  await query(`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name='missions'
+        AND column_name NOT IN ('id','title','xp_reward','image_url','requires_upload','created_at')
+      ) THEN
+        DROP TABLE missions;
+      END IF;
+    END $$;
+  `);
+
+  // MISSIONS (korrekt)
   await query(`
     CREATE TABLE IF NOT EXISTS missions (
       id SERIAL PRIMARY KEY,
       title TEXT NOT NULL,
-      description TEXT,
       xp_reward INTEGER NOT NULL DEFAULT 0,
       image_url TEXT,
       requires_upload BOOLEAN DEFAULT false,
@@ -68,17 +90,19 @@ async function migrate() {
     );
   `);
 
-  // Admin anlegen falls nicht existiert
+  // DEFAULT ADMIN
   await query(`
     INSERT INTO users (name, password, role)
-    VALUES ('admin', 'admin', 'admin')
+    VALUES ('admin','admin','admin')
     ON CONFLICT (name) DO NOTHING;
   `);
 
   console.log("Migration abgeschlossen.");
 }
 
-// APP --------------------------------------
+// ------------------------------------
+// EXPRESS APP
+// ------------------------------------
 const app = express();
 
 app.use(cors());
@@ -118,7 +142,6 @@ app.get("/api/admin/classes", async (req, res) => {
 
 app.post("/api/admin/classes", async (req, res) => {
   const { name } = req.body;
-
   try {
     await query("INSERT INTO classes (name) VALUES ($1)", [name]);
     res.json({ success: true });
@@ -142,9 +165,12 @@ app.get("/api/admin/missions", async (req, res) => {
 
 app.post("/api/admin/missions", async (req, res) => {
   const title = req.body.title;
-  const description = req.body.description || "";
   const xp = Number(req.body.xp_reward);
   const requiresUpload = req.body.requires_upload === "true";
+
+  if (!title || !xp) {
+    return res.status(400).json({ error: "Titel und XP benötigt" });
+  }
 
   let imageUrl = null;
 
@@ -157,9 +183,9 @@ app.post("/api/admin/missions", async (req, res) => {
   }
 
   await query(
-    `INSERT INTO missions (title, description, xp_reward, image_url, requires_upload)
-     VALUES ($1,$2,$3,$4,$5)`,
-    [title, description, xp, imageUrl, requiresUpload]
+    `INSERT INTO missions (title, xp_reward, image_url, requires_upload)
+     VALUES ($1,$2,$3,$4)`,
+    [title, xp, imageUrl, requiresUpload]
   );
 
   res.json({ success: true });
