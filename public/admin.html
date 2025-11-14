@@ -13,7 +13,7 @@
       margin: 0;
     }
 
-    h1 {
+    h1, h2, h3 {
       color: #80f0d0;
       margin-top: 0;
     }
@@ -34,16 +34,6 @@
       border-radius: 12px;
       margin-bottom: 2.5rem;
       box-shadow: 0 0 12px rgba(0,0,0,0.5);
-    }
-
-    h2 {
-      color: #80f0d0;
-      margin-top: 0;
-    }
-
-    h3 {
-      color: #80f0d0;
-      margin-top: 1rem;
     }
 
     input, select {
@@ -107,23 +97,21 @@
 <h1>Adminbereich</h1>
 <button class="logout-btn" onclick="logout()">Logout</button>
 
-
-<!-- =============================================================== -->
+<!-- ========================================= -->
 <!-- KLASSEN -->
-<!-- =============================================================== -->
+<!-- ========================================= -->
 <div class="box">
   <h2>Klassen</h2>
 
-  <input id="class-name" placeholder="Neue Klasse (z. B. 7a)">
+  <input id="class-name" placeholder="Neue Klasse">
   <button class="btn-primary" onclick="createClass()">Anlegen</button>
 
   <div id="class-list"></div>
 </div>
 
-
-<!-- =============================================================== -->
+<!-- ========================================= -->
 <!-- SCHÜLER -->
-<!-- =============================================================== -->
+<!-- ========================================= -->
 <div class="box">
   <h2>Schüler:innen</h2>
 
@@ -137,63 +125,54 @@
   <div id="student-list"></div>
 </div>
 
-
-<!-- =============================================================== -->
-<!-- XP-VERGABE -->
-<!-- =============================================================== -->
+<!-- ========================================= -->
+<!-- XP VERGABE -->
+<!-- ========================================= -->
 <div class="box">
   <h2>XP-Vergabe</h2>
 
   <select id="xp-class-select"></select>
 
-  <div style="margin:1rem 0;">
-    <label><input type="checkbox" id="xp-select-all"> Alle auswählen</label>
-  </div>
+  <label><input type="checkbox" id="xp-select-all"> Alle auswählen</label>
 
   <div id="xp-student-list"></div>
 
-  <hr style="margin:1.5rem 0; border-color:#333;">
+  <hr>
 
   <h3>Manuelle XP</h3>
   <input id="xp-amount" type="number" placeholder="XP eingeben">
   <button class="btn-primary" onclick="giveXpToSelected()">XP an ausgewählte</button>
   <button class="btn-primary" onclick="giveXpToClass()">XP an gesamte Klasse</button>
 
-  <hr style="margin:1.5rem 0; border-color:#333;">
+  <hr>
 
-  <h3>XP durch Mission</h3>
-
+  <h3>Mission XP</h3>
   <select id="mission-select"></select>
 
   <button class="btn-primary" onclick="giveMissionXpToSelected()">Mission an ausgewählte</button>
-  <button class="btn-primary" onclick="giveMissionXpToClass()">Mission an gesamte Klasse</button>
+  <button class="btn-primary" onclick="giveMissionXpToClass()">Mission an Klasse</button>
 </div>
 
-
-<!-- =============================================================== -->
+<!-- ========================================= -->
 <!-- MISSIONEN -->
-<!-- =============================================================== -->
+<!-- ========================================= -->
 <div class="box">
   <h2>Missionen</h2>
 
   <form id="mission-form" enctype="multipart/form-data">
     <input name="title" placeholder="Titel">
     <input name="xp_reward" type="number" placeholder="XP">
-    <label>
-      <input type="checkbox" name="requires_upload">
-      Schüler:innen müssen Bild hochladen
-    </label>
+    <label><input type="checkbox" name="requires_upload"> Upload nötig</label>
     <input type="file" name="image">
-    <button class="btn-primary" type="submit">Mission anlegen</button>
+    <button class="btn-primary">Mission anlegen</button>
   </form>
 
   <div id="mission-list"></div>
 </div>
 
-
-<!-- =============================================================== -->
+<!-- ========================================= -->
 <!-- BONUSKARTEN -->
-<!-- =============================================================== -->
+<!-- ========================================= -->
 <div class="box">
   <h2>Bonus-Karten</h2>
 
@@ -201,48 +180,43 @@
     <input name="title" placeholder="Titel">
     <input name="xp_cost" type="number" placeholder="XP-Kosten">
     <input type="file" name="image">
-    <button class="btn-primary" type="submit">Bonuskarte anlegen</button>
+    <button class="btn-primary">Bonuskarte anlegen</button>
   </form>
 
   <div id="bonus-list"></div>
 </div>
 
-
-<!-- =============================================================== -->
+<!-- ========================================= -->
 <!-- CHARAKTERE -->
-<!-- =============================================================== -->
+<!-- ========================================= -->
 <div class="box">
   <h2>Charaktere</h2>
 
   <form id="character-form" enctype="multipart/form-data">
     <input name="name" placeholder="Charaktername">
     <input type="file" name="image">
-    <button class="btn-primary" type="submit">Charakter anlegen</button>
+    <button class="btn-primary">Charakter anlegen</button>
   </form>
 
   <div id="character-list"></div>
 </div>
 
-
-<!-- =============================================================== -->
+<!-- ========================================= -->
 <!-- LEVEL -->
-<!-- =============================================================== -->
+<!-- ========================================= -->
 <div class="box">
   <h2>Level</h2>
 
-  <form id="level-form">
-    <input name="title" placeholder="Levelname (z. B. Lehrling)">
-    <input name="required_xp" type="number" placeholder="Benötigte XP">
-    <button class="btn-primary" type="submit">Level anlegen</button>
-  </form>
+  <input id="level-title" placeholder="Levelname (z. B. Lehrling)">
+  <input id="level-xp" type="number" placeholder="Benötigte XP">
+  <button class="btn-primary" onclick="createLevel()">Level anlegen</button>
 
   <div id="level-list"></div>
 </div>
 
-
-<!-- =============================================================== -->
-<!-- UPLOAD-POPUP -->
-<!-- =============================================================== -->
+<!-- ========================================= -->
+<!-- UPLOAD POPUP -->
+<!-- ========================================= -->
 <div id="upload-popup">
   <div id="upload-popup-inner">
     <h2>Uploads</h2>
@@ -251,11 +225,10 @@
   </div>
 </div>
 
-
-
-
 <script>
-// Sicherheits-Check
+// ---------------------------------------------
+// LOGIN-SCHUTZ
+// ---------------------------------------------
 if (localStorage.getItem("role") !== "admin") {
   location.href = "login.html";
 }
@@ -265,16 +238,16 @@ function logout() {
   location.href = "login.html";
 }
 
+// ---------------------------------------------
 function fixUrl(url) {
   if (!url) return "";
   if (url.startsWith("http")) return url;
   return window.location.origin + url;
 }
 
-
-// ====================================================================
+// =====================================================
 // KLASSEN
-// ====================================================================
+// =====================================================
 async function loadClasses() {
   const res = await fetch("/api/admin/classes");
   const data = await res.json();
@@ -290,13 +263,11 @@ async function loadClasses() {
   data.classes.forEach(c => {
     studentSel.innerHTML += `<option value="${c.id}">${c.name}</option>`;
     xpSel.innerHTML += `<option value="${c.id}">${c.name}</option>`;
-
     classList.innerHTML += `
       <div class="entry">
         ${c.name}
         <button class="btn-danger" onclick="deleteClass(${c.id})">Löschen</button>
-      </div>
-    `;
+      </div>`;
   });
 
   loadStudents();
@@ -322,10 +293,9 @@ async function deleteClass(id) {
   loadClasses();
 }
 
-
-// ====================================================================
+// =====================================================
 // SCHÜLER
-// ====================================================================
+// =====================================================
 async function loadStudents() {
   const classId = document.getElementById("student-class-select").value;
 
@@ -370,10 +340,9 @@ async function deleteStudent(id) {
   loadXpList();
 }
 
-
-// ====================================================================
-// XP LISTE
-// ====================================================================
+// =====================================================
+// XP-LISTE
+// =====================================================
 async function loadXpList() {
   const classId = document.getElementById("xp-class-select").value;
 
@@ -404,10 +373,9 @@ function getSelectedIds() {
   return [...document.querySelectorAll(".xp-checkbox:checked")].map(cb => cb.value);
 }
 
-
-// ====================================================================
+// =====================================================
 // XP VERGEBEN
-// ====================================================================
+// =====================================================
 async function giveXpToSelected() {
   const ids = getSelectedIds();
   const amount = Number(document.getElementById("xp-amount").value);
@@ -437,10 +405,9 @@ async function giveXpToClass() {
   loadXpList();
 }
 
-
-// ====================================================================
-// MISSION-XP
-// ====================================================================
+// =====================================================
+// MISSION XP
+// =====================================================
 async function loadMissionSelect() {
   const res = await fetch("/api/admin/missions");
   const missions = await res.json();
@@ -480,10 +447,9 @@ async function giveMissionXpToClass() {
   loadXpList();
 }
 
-
-// ====================================================================
+// =====================================================
 // MISSIONEN
-// ====================================================================
+// =====================================================
 async function loadMissions() {
   const res = await fetch("/api/admin/missions");
   const missions = await res.json();
@@ -497,7 +463,11 @@ async function loadMissions() {
         <div>
           <strong>${m.title}</strong><br>
           XP: ${m.xp_reward}
-          ${m.image_url ? `<br><img class="preview-img" src="${fixUrl(m.image_url)}">` : ""}
+          ${
+            m.image_url
+              ? `<br><img class="preview-img" src="${fixUrl(m.image_url)}">`
+              : ""
+          }
         </div>
         <button class="btn-danger" onclick="deleteMission(${m.id})">Löschen</button>
       </div>`;
@@ -510,10 +480,7 @@ document.getElementById("mission-form").onsubmit = async (e) => {
   e.preventDefault();
 
   const data = new FormData(document.getElementById("mission-form"));
-  await fetch("/api/admin/missions", {
-    method: "POST",
-    body: data
-  });
+  await fetch("/api/admin/missions", { method: "POST", body: data });
 
   document.getElementById("mission-form").reset();
   loadMissions();
@@ -524,10 +491,9 @@ async function deleteMission(id) {
   loadMissions();
 }
 
-
-// ====================================================================
+// =====================================================
 // BONUSKARTEN
-// ====================================================================
+// =====================================================
 async function loadBonus() {
   const res = await fetch("/api/admin/bonus");
   const cards = await res.json();
@@ -541,7 +507,11 @@ async function loadBonus() {
         <div>
           <strong>${b.title}</strong><br>
           Kosten: ${b.xp_cost} XP
-          ${b.image_url ? `<br><img class="preview-img" src="${fixUrl(b.image_url)}">` : ""}
+          ${
+            b.image_url
+              ? `<br><img class="preview-img" src="${fixUrl(b.image_url)}">`
+              : ""
+          }
         </div>
         <button class="btn-danger" onclick="deleteBonus(${b.id})">Löschen</button>
       </div>`;
@@ -563,10 +533,9 @@ async function deleteBonus(id) {
   loadBonus();
 }
 
-
-// ====================================================================
+// =====================================================
 // CHARAKTERE
-// ====================================================================
+// =====================================================
 async function loadCharacters() {
   const res = await fetch("/api/admin/characters");
   const chars = await res.json();
@@ -579,7 +548,11 @@ async function loadCharacters() {
       <div class="entry">
         <div>
           <strong>${ch.name}</strong>
-          ${ch.image_url ? `<br><img class="preview-img" src="${fixUrl(ch.image_url)}">` : ""}
+          ${
+            ch.image_url
+              ? `<br><img class="preview-img" src="${fixUrl(ch.image_url)}">`
+              : ""
+          }
         </div>
         <button class="btn-danger" onclick="deleteCharacter(${ch.id})">Löschen</button>
       </div>`;
@@ -604,10 +577,9 @@ async function deleteCharacter(id) {
   loadCharacters();
 }
 
-
-// ====================================================================
-// LEVEL
-// ====================================================================
+// =====================================================
+// LEVEL – NEU
+// =====================================================
 async function loadLevels() {
   const res = await fetch("/api/admin/levels");
   const levels = await res.json();
@@ -623,38 +595,36 @@ async function loadLevels() {
           Benötigte XP: ${l.required_xp}
         </div>
         <button class="btn-danger" onclick="deleteLevel(${l.id})">Löschen</button>
-      </div>
-    `;
+      </div>`;
   });
 }
 
-document.getElementById("level-form").onsubmit = async (e) => {
-  e.preventDefault();
+async function createLevel() {
+  const title = document.getElementById("level-title").value.trim();
+  const required_xp = Number(document.getElementById("level-xp").value);
 
-  const form = new FormData(document.getElementById("level-form"));
+  if (!title || !required_xp) return;
 
   await fetch("/api/admin/levels", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({
-      title: form.get("title"),
-      required_xp: form.get("required_xp")
-    })
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({ title, required_xp })
   });
 
-  document.getElementById("level-form").reset();
+  document.getElementById("level-title").value = "";
+  document.getElementById("level-xp").value = "";
+
   loadLevels();
-};
+}
 
 async function deleteLevel(id) {
   await fetch(`/api/admin/levels/${id}`, { method:"DELETE" });
   loadLevels();
 }
 
-
-// ====================================================================
+// =====================================================
 // UPLOAD POPUP
-// ====================================================================
+// =====================================================
 async function openUploads(studentId) {
   const res = await fetch(`/api/admin/uploads/${studentId}`);
   const uploads = await res.json();
@@ -686,10 +656,9 @@ async function deleteUpload(id, studentId) {
   openUploads(studentId);
 }
 
-
-// ====================================================================
+// =====================================================
 // INIT
-// ====================================================================
+// =====================================================
 loadClasses();
 loadMissions();
 loadBonus();
