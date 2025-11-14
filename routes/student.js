@@ -1,15 +1,16 @@
-import express from "express";
-import { query } from "../db.js";
+<!DOCTYPE html>
+<html lang="de">
+<body style="background:#0f0f14; color:white; padding:2rem; font-family:Arial;">
 
-const router = express.Router();
+<h1>Student Dashboard</h1>
+<p>Hier kommt später das XP-Levelsystem.</p>
 
-router.get("/missions/:id", async (req, res) => {
-    try {
-        const missions = await query("SELECT * FROM missions", []);
-        res.json(missions.rows);
-    } catch {
-        res.status(500).json({ error: "Fehler" });
-    }
-});
+<button onclick="logout()">Logout</button>
 
-export default router;
+<script>
+if(!localStorage.getItem("role")) location.href="login.html";
+function logout(){ localStorage.clear(); location.href="login.html"; }
+</script>
+
+</body>
+</html>

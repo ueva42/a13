@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="de">
-<body style="background:#0f0f14; color:white; font-family:Arial; padding:2rem">
+<body style="background:#0f0f14; color:white; padding:2rem; font-family:Arial;">
 
 <h2>Login</h2>
 
@@ -9,26 +9,26 @@
 <button onclick="login()">Login</button>
 
 <script>
-async function login() {
-  const r = await fetch("/api/auth/login", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({
-      name: document.getElementById("name").value,
-      password: document.getElementById("pass").value
-    })
-  });
+async function login(){
+    const r = await fetch("/api/auth/login",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({
+            name:document.getElementById("name").value,
+            password:document.getElementById("pass").value
+        })
+    });
 
-  const data = await r.json();
-  if (!r.ok) return alert(data.error);
+    const d = await r.json();
+    if(!r.ok){ alert(d.error); return; }
 
-  localStorage.setItem("id", data.id);
-  localStorage.setItem("name", data.name);
-  localStorage.setItem("role", data.role);
+    localStorage.setItem("role", d.role);
+    localStorage.setItem("id", d.id);
 
-  if (data.role === "admin") location.href = "admin.html";
-  else location.href = "student.html";
+    if(d.role==="admin") location.href="admin.html";
+    else location.href="student.html";
 }
 </script>
+
 </body>
 </html>

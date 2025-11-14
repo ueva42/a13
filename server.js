@@ -1,5 +1,5 @@
 // ==========================================
-// server.js – Temple of Logic (HARD RESET)
+// server.js – Temple of Logic (FINAL BUILD)
 // ==========================================
 
 import express from "express";
@@ -30,9 +30,7 @@ export async function query(q, params) {
   }
 }
 
-// ------------------------------------------
-// PATHS
-// ------------------------------------------
+// PATHS -----------------------------------
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -40,20 +38,16 @@ const uploadFolder = path.join(__dirname, "public", "uploads");
 if (!fs.existsSync(uploadFolder)) fs.mkdirSync(uploadFolder, { recursive: true });
 
 // ------------------------------------------
-// HARD RESET MIGRATION
+// MIGRATION – HARD RESET
 // ------------------------------------------
 async function migrate() {
-  console.log("Starte HARD RESET Migration…");
+  console.log("Starte Migration…");
 
-  // ALLE Tabellen droppen
   await query(`DROP TABLE IF EXISTS student_mission_uploads CASCADE;`);
   await query(`DROP TABLE IF EXISTS missions CASCADE;`);
   await query(`DROP TABLE IF EXISTS users CASCADE;`);
   await query(`DROP TABLE IF EXISTS classes CASCADE;`);
 
-  // ======================
-  // CLASSES
-  // ======================
   await query(`
     CREATE TABLE classes (
       id SERIAL PRIMARY KEY,
@@ -61,9 +55,6 @@ async function migrate() {
     );
   `);
 
-  // ======================
-  // USERS
-  // ======================
   await query(`
     CREATE TABLE users (
       id SERIAL PRIMARY KEY,
@@ -77,23 +68,17 @@ async function migrate() {
     );
   `);
 
-  // ======================
-  // MISSIONS
-  // ======================
   await query(`
     CREATE TABLE missions (
       id SERIAL PRIMARY KEY,
       title TEXT NOT NULL,
-      xp_reward INTEGER NOT NULL DEFAULT 0,
+      xp_reward INTEGER NOT NULL,
       image_url TEXT,
       requires_upload BOOLEAN DEFAULT false,
       created_at TIMESTAMP DEFAULT NOW()
     );
   `);
 
-  // ======================
-  // STUDENT UPLOADS
-  // ======================
   await query(`
     CREATE TABLE student_mission_uploads (
       id SERIAL PRIMARY KEY,
@@ -104,27 +89,23 @@ async function migrate() {
     );
   `);
 
-  // ======================
-  // DEFAULT ADMIN
-  // ======================
   await query(`
     INSERT INTO users (name, password, role)
-    VALUES ('admin', 'admin', 'admin')
+    VALUES ('admin','admin','admin')
     ON CONFLICT (name) DO NOTHING;
   `);
 
-  console.log("HARD RESET Migration abgeschlossen!");
+  console.log("Migration abgeschlossen.");
 }
 
 // ------------------------------------------
-// EXPRESS APP
+// EXPRESS
 // ------------------------------------------
 const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(fileUpload());
 app.use(express.static(path.join(__dirname, "public")));
-
 
 // ------------------------------------------
 // LOGIN
@@ -146,19 +127,17 @@ app.post("/api/auth/login", async (req, res) => {
   });
 });
 
-
 // ------------------------------------------
 // KLASSEN
 // ------------------------------------------
 app.get("/api/admin/classes", async (req, res) => {
-  const r = await query("SELECT id, name FROM classes ORDER BY name ASC");
+  const r = await query("SELECT * FROM classes ORDER BY name ASC");
   res.json({ classes: r.rows });
 });
 
 app.post("/api/admin/classes", async (req, res) => {
-  const { name } = req.body;
   try {
-    await query("INSERT INTO classes (name) VALUES ($1)", [name]);
+    await query("INSERT INTO classes (name) VALUES ($1)", [req.body.name]);
     res.json({ success: true });
   } catch {
     res.status(400).json({ error: "Klasse existiert bereits" });
@@ -170,13 +149,12 @@ app.delete("/api/admin/classes/:id", async (req, res) => {
   res.json({ success: true });
 });
 
-
 // ------------------------------------------
 // SCHÜLER
 // ------------------------------------------
 app.get("/api/admin/students/:classId", async (req, res) => {
   const r = await query(
-    "SELECT id, name, xp FROM users WHERE role='student' AND class_id=$1 ORDER BY name ASC",
+    "SELECT id, name, xp FROM users WHERE class_id=$1 AND role='student' ORDER BY name ASC",
     [req.params.classId]
   );
   res.json(r.rows);
@@ -196,21 +174,18 @@ app.post("/api/admin/students", async (req, res) => {
 });
 
 app.delete("/api/admin/students/:id", async (req, res) => {
-  await query("DELETE FROM users WHERE id=$1 AND role='student'", [
-    req.params.id
-  ]);
+  await query("DELETE FROM users WHERE id=$1 AND role='student'", [req.params.id]);
   res.json({ success: true });
 });
 
-
 // ------------------------------------------
-// XP VERGABE
+// XP
 // ------------------------------------------
 app.post("/api/admin/xp/student", async (req, res) => {
   const { student_id, amount } = req.body;
 
   await query(
-    "UPDATE users SET xp = xp + $1, highest_xp = GREATEST(highest_xp, xp + $1) WHERE id=$2",
+    "UPDATE users SET xp=xp+$1, highest_xp=GREATEST(highest_xp, xp+$1) WHERE id=$2",
     [amount, student_id]
   );
 
@@ -221,13 +196,12 @@ app.post("/api/admin/xp/class", async (req, res) => {
   const { class_id, amount } = req.body;
 
   await query(
-    "UPDATE users SET xp = xp + $1, highest_xp = GREATEST(highest_xp, xp + $1) WHERE class_id=$2 AND role='student'",
+    "UPDATE users SET xp=xp+$1, highest_xp=GREATEST(highest_xp, xp+$1) WHERE class_id=$2 AND role='student'",
     [amount, class_id]
   );
 
   res.json({ success: true });
 });
-
 
 // ------------------------------------------
 // MISSIONEN
@@ -241,12 +215,11 @@ app.post("/api/admin/missions", async (req, res) => {
   const { title, xp_reward, requires_upload } = req.body;
 
   let imageUrl = null;
-
   if (req.files && req.files.image) {
     const img = req.files.image;
     const filename = "mission_" + Date.now() + "_" + img.name;
-    const fullPath = path.join(uploadFolder, filename);
-    await img.mv(fullPath);
+    const pathFull = path.join(uploadFolder, filename);
+    await img.mv(pathFull);
     imageUrl = "/uploads/" + filename;
   }
 
@@ -264,6 +237,54 @@ app.delete("/api/admin/missions/:id", async (req, res) => {
   res.json({ success: true });
 });
 
+// ------------------------------------------
+// UPLOADS (ADMIN-SICHT)
+// ------------------------------------------
+app.get("/api/admin/uploads/:studentId", async (req, res) => {
+  const r = await query(
+    "SELECT * FROM student_mission_uploads WHERE student_id=$1 ORDER BY created_at DESC",
+    [req.params.studentId]
+  );
+  res.json(r.rows);
+});
+
+app.delete("/api/admin/uploads/:id", async (req, res) => {
+  await query("DELETE FROM student_mission_uploads WHERE id=$1", [req.params.id]);
+  res.json({ success: true });
+});
+
+// ------------------------------------------
+// XP durch Mission
+// ------------------------------------------
+app.post("/api/admin/xp/mission-students", async (req, res) => {
+  const { student_ids, mission_id } = req.body;
+
+  const r = await query("SELECT xp_reward FROM missions WHERE id=$1", [mission_id]);
+  const xp = r.rows[0].xp_reward;
+
+  for (let id of student_ids) {
+    await query(
+      "UPDATE users SET xp=xp+$1, highest_xp=GREATEST(highest_xp, xp+$1) WHERE id=$2",
+      [xp, id]
+    );
+  }
+
+  res.json({ success: true });
+});
+
+app.post("/api/admin/xp/mission-class", async (req, res) => {
+  const { class_id, mission_id } = req.body;
+
+  const r = await query("SELECT xp_reward FROM missions WHERE id=$1", [mission_id]);
+  const xp = r.rows[0].xp_reward;
+
+  await query(
+    "UPDATE users SET xp=xp+$1, highest_xp=GREATEST(highest_xp, xp+$1) WHERE class_id=$2 AND role='student'",
+    [xp, class_id]
+  );
+
+  res.json({ success: true });
+});
 
 // ------------------------------------------
 app.get("/", (req, res) => {
