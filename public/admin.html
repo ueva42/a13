@@ -488,4 +488,28 @@ async function openUploads(studentId) {
     document.getElementById("upload-popup").style.display = "block";
 }
 
-function closeUploadPopup()
+function closeUploadPopup() {
+    document.getElementById("upload-popup").style.display = "none";
+}
+
+async function deleteUpload(id, studentId) {
+    await fetch(`/api/admin/uploads/${id}`, { method:"DELETE" });
+    openUploads(studentId);
+}
+
+
+// =================================
+// INIT
+// =================================
+loadClasses();
+loadMissionSelect();
+
+document.getElementById("student-class-select").onchange = loadStudents;
+document.getElementById("xp-class-select").onchange = loadXpList;
+
+loadMissions();
+
+</script>
+
+</body>
+</html>
