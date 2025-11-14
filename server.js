@@ -1,5 +1,5 @@
 // ==========================================
-// server.js – Temple of Logic (FINAL)
+// server.js – Temple of Logic (HARD RESET)
 // ==========================================
 
 import express from "express";
@@ -13,7 +13,9 @@ import fs from "fs";
 
 dotenv.config();
 
-// DB --------------------------------------
+// ------------------------------------------
+// DB
+// ------------------------------------------
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
@@ -28,7 +30,9 @@ export async function query(q, params) {
   }
 }
 
-// PATHS -----------------------------------
+// ------------------------------------------
+// PATHS
+// ------------------------------------------
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -36,20 +40,32 @@ const uploadFolder = path.join(__dirname, "public", "uploads");
 if (!fs.existsSync(uploadFolder)) fs.mkdirSync(uploadFolder, { recursive: true });
 
 // ------------------------------------------
-// MIGRATION (drop + create Mission Tables SAUBER)
+// HARD RESET MIGRATION
 // ------------------------------------------
 async function migrate() {
-  console.log("Starte Migration…");
+  console.log("Starte HARD RESET Migration…");
 
+  // ALLE Tabellen droppen
+  await query(`DROP TABLE IF EXISTS student_mission_uploads CASCADE;`);
+  await query(`DROP TABLE IF EXISTS missions CASCADE;`);
+  await query(`DROP TABLE IF EXISTS users CASCADE;`);
+  await query(`DROP TABLE IF EXISTS classes CASCADE;`);
+
+  // ======================
+  // CLASSES
+  // ======================
   await query(`
-    CREATE TABLE IF NOT EXISTS classes (
+    CREATE TABLE classes (
       id SERIAL PRIMARY KEY,
       name TEXT NOT NULL UNIQUE
     );
   `);
 
+  // ======================
+  // USERS
+  // ======================
   await query(`
-    CREATE TABLE IF NOT EXISTS users (
+    CREATE TABLE users (
       id SERIAL PRIMARY KEY,
       name TEXT NOT NULL UNIQUE,
       password TEXT NOT NULL,
@@ -61,9 +77,9 @@ async function migrate() {
     );
   `);
 
-  await query(`DROP TABLE IF EXISTS student_mission_uploads CASCADE;`);
-  await query(`DROP TABLE IF EXISTS missions CASCADE;`);
-
+  // ======================
+  // MISSIONS
+  // ======================
   await query(`
     CREATE TABLE missions (
       id SERIAL PRIMARY KEY,
@@ -75,6 +91,9 @@ async function migrate() {
     );
   `);
 
+  // ======================
+  // STUDENT UPLOADS
+  // ======================
   await query(`
     CREATE TABLE student_mission_uploads (
       id SERIAL PRIMARY KEY,
@@ -85,35 +104,38 @@ async function migrate() {
     );
   `);
 
+  // ======================
+  // DEFAULT ADMIN
+  // ======================
   await query(`
     INSERT INTO users (name, password, role)
     VALUES ('admin', 'admin', 'admin')
     ON CONFLICT (name) DO NOTHING;
   `);
 
-  console.log("Migration abgeschlossen.");
+  console.log("HARD RESET Migration abgeschlossen!");
 }
 
-// ----------------------------------------------------
-// EXPRESS SETUP
-// ----------------------------------------------------
+// ------------------------------------------
+// EXPRESS APP
+// ------------------------------------------
 const app = express();
-
 app.use(cors());
 app.use(express.json());
 app.use(fileUpload());
 app.use(express.static(path.join(__dirname, "public")));
 
-// ----------------------------------------------------
+
+// ------------------------------------------
 // LOGIN
-// ----------------------------------------------------
+// ------------------------------------------
 app.post("/api/auth/login", async (req, res) => {
   const { name, password } = req.body;
 
-  const r = await query("SELECT * FROM users WHERE name=$1 AND password=$2", [
-    name,
-    password
-  ]);
+  const r = await query(
+    "SELECT * FROM users WHERE name=$1 AND password=$2",
+    [name, password]
+  );
 
   if (!r.rows[0]) return res.status(400).json({ error: "Login fehlgeschlagen" });
 
@@ -124,17 +146,19 @@ app.post("/api/auth/login", async (req, res) => {
   });
 });
 
-// ----------------------------------------------------
+
+// ------------------------------------------
 // KLASSEN
-// ----------------------------------------------------
+// ------------------------------------------
 app.get("/api/admin/classes", async (req, res) => {
   const r = await query("SELECT id, name FROM classes ORDER BY name ASC");
   res.json({ classes: r.rows });
 });
 
 app.post("/api/admin/classes", async (req, res) => {
+  const { name } = req.body;
   try {
-    await query("INSERT INTO classes (name) VALUES ($1)", [req.body.name]);
+    await query("INSERT INTO classes (name) VALUES ($1)", [name]);
     res.json({ success: true });
   } catch {
     res.status(400).json({ error: "Klasse existiert bereits" });
@@ -146,9 +170,10 @@ app.delete("/api/admin/classes/:id", async (req, res) => {
   res.json({ success: true });
 });
 
-// ----------------------------------------------------
+
+// ------------------------------------------
 // SCHÜLER
-// ----------------------------------------------------
+// ------------------------------------------
 app.get("/api/admin/students/:classId", async (req, res) => {
   const r = await query(
     "SELECT id, name, xp FROM users WHERE role='student' AND class_id=$1 ORDER BY name ASC",
@@ -177,9 +202,10 @@ app.delete("/api/admin/students/:id", async (req, res) => {
   res.json({ success: true });
 });
 
-// ----------------------------------------------------
-// XP
-// ----------------------------------------------------
+
+// ------------------------------------------
+// XP VERGABE
+// ------------------------------------------
 app.post("/api/admin/xp/student", async (req, res) => {
   const { student_id, amount } = req.body;
 
@@ -202,9 +228,10 @@ app.post("/api/admin/xp/class", async (req, res) => {
   res.json({ success: true });
 });
 
-// ----------------------------------------------------
+
+// ------------------------------------------
 // MISSIONEN
-// ----------------------------------------------------
+// ------------------------------------------
 app.get("/api/admin/missions", async (req, res) => {
   const r = await query("SELECT * FROM missions ORDER BY id DESC");
   res.json(r.rows);
@@ -237,12 +264,13 @@ app.delete("/api/admin/missions/:id", async (req, res) => {
   res.json({ success: true });
 });
 
-// ----------------------------------------------------
+
+// ------------------------------------------
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "login.html"));
 });
 
-// START ----------------------------------------------
+// ------------------------------------------
 migrate().then(() => {
   const PORT = process.env.PORT || 3000;
   app.listen(PORT, () => console.log("Server läuft auf Port", PORT));
