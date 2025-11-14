@@ -1,6 +1,7 @@
-// ==========================================
-// server.js – Temple of Logic (FINAL VERSION)
-// ==========================================
+///////////////////////////////////////////////////////////////
+// server.js – Temple of Logic FINAL (mit Characters, Bonus,
+// Missionen, Levelstart 0 XP & vollständigen Uploads)
+///////////////////////////////////////////////////////////////
 
 import express from "express";
 import fileUpload from "express-fileupload";
@@ -13,9 +14,9 @@ import { fileURLToPath } from "url";
 
 dotenv.config();
 
-// ----------------------------------------------------
-// PostgreSQL Verbindung
-// ----------------------------------------------------
+///////////////////////////////////////////////////////////////
+// DB VERBINDUNG
+///////////////////////////////////////////////////////////////
 const pool = new pg.Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: { rejectUnauthorized: false }
@@ -30,12 +31,15 @@ export async function query(q, params) {
     }
 }
 
-// ----------------------------------------------------
+///////////////////////////////////////////////////////////////
 // MIGRATION
-// ----------------------------------------------------
+///////////////////////////////////////////////////////////////
 async function migrate() {
+    console.log("Starte Migration…");
 
-    // Tabellen anlegen
+    // ---------------------------------------------------------
+    // Klassen
+    // ---------------------------------------------------------
     await query(`
         CREATE TABLE IF NOT EXISTS classes (
             id SERIAL PRIMARY KEY,
@@ -43,6 +47,9 @@ async function migrate() {
         );
     `);
 
+    // ---------------------------------------------------------
+    // Charaktere (muss vor users existieren!)
+    // ---------------------------------------------------------
     await query(`
         CREATE TABLE IF NOT EXISTS characters (
             id SERIAL PRIMARY KEY,
@@ -52,6 +59,9 @@ async function migrate() {
         );
     `);
 
+    // ---------------------------------------------------------
+    // Users
+    // ---------------------------------------------------------
     await query(`
         CREATE TABLE IF NOT EXISTS users (
             id SERIAL PRIMARY KEY,
@@ -66,6 +76,9 @@ async function migrate() {
         );
     `);
 
+    // ---------------------------------------------------------
+    // Missionen
+    // ---------------------------------------------------------
     await query(`
         CREATE TABLE IF NOT EXISTS missions (
             id SERIAL PRIMARY KEY,
@@ -77,6 +90,21 @@ async function migrate() {
         );
     `);
 
+    // ---------------------------------------------------------
+    // Schüler Uploads
+    // ---------------------------------------------------------
+    await query(`
+        CREATE TABLE IF NOT EXISTS student_uploads (
+            id SERIAL PRIMARY KEY,
+            student_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+            file_url TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT NOW()
+        );
+    `);
+
+    // ---------------------------------------------------------
+    // Bonuskarten
+    // ---------------------------------------------------------
     await query(`
         CREATE TABLE IF NOT EXISTS bonus_cards (
             id SERIAL PRIMARY KEY,
@@ -87,45 +115,29 @@ async function migrate() {
         );
     `);
 
-    await query(`
-        CREATE TABLE IF NOT EXISTS student_uploads (
-            id SERIAL PRIMARY KEY,
-            student_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-            file_url TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT NOW()
-        );
-    `);
-
-    // Default Admin nur wenn nicht existiert
-    await query(`
-        INSERT INTO users (name, password, role)
-        SELECT 'steffen', 'admin123', 'admin'
-        WHERE NOT EXISTS (SELECT 1 FROM users WHERE name='steffen');
-    `);
+    console.log("Migration abgeschlossen.");
 }
 
-// ----------------------------------------------------
-// EXPRESS EINRICHTEN
-// ----------------------------------------------------
+///////////////////////////////////////////////////////////////
+// EXPRESS SETUP
+///////////////////////////////////////////////////////////////
 const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(fileUpload());
 
-// STATIC FILES
+// Ordner vorbereiten
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const uploadFolder = path.join(__dirname, "public", "uploads");
+if (!fs.existsSync(uploadFolder)) fs.mkdirSync(uploadFolder, { recursive: true });
 
+// Static Files
 app.use(express.static(path.join(__dirname, "public")));
-app.use("/uploads", express.static(path.join(__dirname, "public", "uploads")));
 
-if (!fs.existsSync(path.join(__dirname, "public", "uploads"))) {
-    fs.mkdirSync(path.join(__dirname, "public", "uploads"), { recursive: true });
-}
-
-// ----------------------------------------------------
+///////////////////////////////////////////////////////////////
 // LOGIN
-// ----------------------------------------------------
+///////////////////////////////////////////////////////////////
 app.post("/api/auth/login", async (req, res) => {
     const { name, password } = req.body;
 
@@ -142,9 +154,9 @@ app.post("/api/auth/login", async (req, res) => {
     });
 });
 
-// ----------------------------------------------------
+///////////////////////////////////////////////////////////////
 // KLASSEN
-// ----------------------------------------------------
+///////////////////////////////////////////////////////////////
 app.get("/api/admin/classes", async (req, res) => {
     const r = await query("SELECT * FROM classes ORDER BY name ASC");
     res.json({ classes: r.rows });
@@ -160,9 +172,9 @@ app.delete("/api/admin/classes/:id", async (req, res) => {
     res.json({ success: true });
 });
 
-// ----------------------------------------------------
+///////////////////////////////////////////////////////////////
 // SCHÜLER
-// ----------------------------------------------------
+///////////////////////////////////////////////////////////////
 app.get("/api/admin/students/:class_id", async (req, res) => {
     const r = await query(
         "SELECT * FROM users WHERE class_id=$1 ORDER BY name ASC",
@@ -175,7 +187,7 @@ app.post("/api/admin/students", async (req, res) => {
     const { name, password, class_id } = req.body;
 
     await query(
-        "INSERT INTO users (name, password, role, class_id, xp, highest_xp) VALUES ($1,$2,'student',$3,0,0)",
+        "INSERT INTO users (name, password, role, class_id) VALUES ($1,$2,'student',$3)",
         [name, password, class_id]
     );
 
@@ -187,9 +199,9 @@ app.delete("/api/admin/students/:id", async (req, res) => {
     res.json({ success: true });
 });
 
-// ----------------------------------------------------
+///////////////////////////////////////////////////////////////
 // XP
-// ----------------------------------------------------
+///////////////////////////////////////////////////////////////
 app.post("/api/admin/xp/student", async (req, res) => {
     const { student_id, amount } = req.body;
 
@@ -212,7 +224,7 @@ app.post("/api/admin/xp/class", async (req, res) => {
     res.json({ success: true });
 });
 
-// Mission → Schüler
+// Mission XP → Schülerliste
 app.post("/api/admin/xp/mission-students", async (req, res) => {
     const { student_ids, mission_id } = req.body;
 
@@ -221,7 +233,7 @@ app.post("/api/admin/xp/mission-students", async (req, res) => {
 
     for (let id of student_ids) {
         await query(
-            "UPDATE users SET xp = xp + $1, highest_xp = GREATEST(highest_xp, xp + $1) WHERE id=$2",
+            "UPDATE users SET xp=xp+$1, highest_xp=GREATEST(highest_xp, xp+$1) WHERE id=$2",
             [xp, id]
         );
     }
@@ -229,7 +241,7 @@ app.post("/api/admin/xp/mission-students", async (req, res) => {
     res.json({ success: true });
 });
 
-// Mission → Klasse
+// Mission XP → Klasse
 app.post("/api/admin/xp/mission-class", async (req, res) => {
     const { class_id, mission_id } = req.body;
 
@@ -237,16 +249,16 @@ app.post("/api/admin/xp/mission-class", async (req, res) => {
     const xp = r.rows[0].xp_reward;
 
     await query(
-        "UPDATE users SET xp = xp + $1, highest_xp = GREATEST(highest_xp, xp + $1) WHERE class_id=$2",
+        "UPDATE users SET xp=xp+$1, highest_xp=GREATEST(highest_xp, xp+$1) WHERE class_id=$2",
         [xp, class_id]
     );
 
     res.json({ success: true });
 });
 
-// ----------------------------------------------------
+///////////////////////////////////////////////////////////////
 // MISSIONEN
-// ----------------------------------------------------
+///////////////////////////////////////////////////////////////
 app.get("/api/admin/missions", async (req, res) => {
     const r = await query("SELECT * FROM missions ORDER BY id DESC");
     res.json(r.rows);
@@ -256,11 +268,10 @@ app.post("/api/admin/missions", async (req, res) => {
     const { title, xp_reward } = req.body;
 
     let imageUrl = null;
-
     if (req.files?.image) {
         const img = req.files.image;
         const filename = "mission_" + Date.now() + "_" + img.name;
-        await img.mv(path.join(__dirname, "public", "uploads", filename));
+        await img.mv(path.join(uploadFolder, filename));
         imageUrl = "/uploads/" + filename;
     }
 
@@ -277,9 +288,25 @@ app.delete("/api/admin/missions/:id", async (req, res) => {
     res.json({ success: true });
 });
 
-// ----------------------------------------------------
+///////////////////////////////////////////////////////////////
+// UPLOADS
+///////////////////////////////////////////////////////////////
+app.get("/api/admin/uploads/:student_id", async (req, res) => {
+    const r = await query(
+        "SELECT * FROM student_uploads WHERE student_id=$1 ORDER BY id DESC",
+        [req.params.student_id]
+    );
+    res.json(r.rows);
+});
+
+app.delete("/api/admin/uploads/:id", async (req, res) => {
+    await query("DELETE FROM student_uploads WHERE id=$1", [req.params.id]);
+    res.json({ success: true });
+});
+
+///////////////////////////////////////////////////////////////
 // BONUSKARTEN
-// ----------------------------------------------------
+///////////////////////////////////////////////////////////////
 app.get("/api/admin/bonus", async (req, res) => {
     const r = await query("SELECT * FROM bonus_cards ORDER BY id DESC");
     res.json(r.rows);
@@ -293,7 +320,7 @@ app.post("/api/admin/bonus", async (req, res) => {
     if (req.files?.image) {
         const img = req.files.image;
         const filename = "bonus_" + Date.now() + "_" + img.name;
-        await img.mv(path.join(__dirname, "public", "uploads", filename));
+        await img.mv(path.join(uploadFolder, filename));
         imageUrl = "/uploads/" + filename;
     }
 
@@ -310,9 +337,9 @@ app.delete("/api/admin/bonus/:id", async (req, res) => {
     res.json({ success: true });
 });
 
-// ----------------------------------------------------
-// CHARACTERS
-// ----------------------------------------------------
+///////////////////////////////////////////////////////////////
+// CHARACTER
+///////////////////////////////////////////////////////////////
 app.get("/api/admin/characters", async (req, res) => {
     const r = await query("SELECT * FROM characters ORDER BY id DESC");
     res.json(r.rows);
@@ -326,7 +353,7 @@ app.post("/api/admin/characters", async (req, res) => {
     if (req.files?.image) {
         const img = req.files.image;
         const filename = "character_" + Date.now() + "_" + img.name;
-        await img.mv(path.join(__dirname, "public", "uploads", filename));
+        await img.mv(path.join(uploadFolder, filename));
         imageUrl = "/uploads/" + filename;
     }
 
@@ -343,9 +370,10 @@ app.delete("/api/admin/characters/:id", async (req, res) => {
     res.json({ success: true });
 });
 
-// ----------------------------------------------------
-// STARTUP
-// ----------------------------------------------------
+
+///////////////////////////////////////////////////////////////
+// START SERVER
+///////////////////////////////////////////////////////////////
 const PORT = process.env.PORT || 3000;
 
 migrate().then(() => {
