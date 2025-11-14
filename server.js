@@ -1,5 +1,5 @@
 // ==========================================
-// server.js – Temple of Logic (FINAL VERSION)
+// server.js – Temple of Logic (FINAL + AUTO-FIX)
 // ==========================================
 
 import express from "express";
@@ -32,23 +32,43 @@ export async function query(q, params) {
 }
 
 // ----------------------------------------------------
+// AUTO-FIX FEHLENDE SPALTEN
+// ----------------------------------------------------
+async function autoFixColumns() {
+    console.log("Prüfe fehlende Spalten…");
+
+    await query(`
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS character_id INTEGER REFERENCES characters(id);
+    `);
+
+    await query(`
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS traits JSONB;
+    `);
+
+    await query(`
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS items JSONB;
+    `);
+
+    console.log("Auto-Fix abgeschlossen.");
+}
+
+// ----------------------------------------------------
 // TRAITS + ITEMS
 // ----------------------------------------------------
 const TRAITS = [
-    "Neugierig", "Ausdauernd", "Kreativ", "Hilfsbereit", "Strukturiert",
-    "Risikofreudig", "Ruhig", "Zielstrebig", "Analytisch", "Teamorientiert",
-    "Selbstkritisch", "Optimistisch", "Aufmerksam", "Pragmatisch", "Mutig",
-    "Sorgfältig", "Logisch denkend", "Erfinderisch", "Geduldig", "Inspirierend"
+    "Neugierig","Ausdauernd","Kreativ","Hilfsbereit","Strukturiert",
+    "Risikofreudig","Ruhig","Zielstrebig","Analytisch","Teamorientiert",
+    "Selbstkritisch","Optimistisch","Aufmerksam","Pragmatisch","Mutig",
+    "Sorgfältig","Logisch denkend","Erfinderisch","Geduldig","Inspirierend"
 ];
 
 const ITEMS = [
-    "Zirkel der Präzision", "Rechenamulett", "Logikstein", "Notizrolle der Klarheit",
-    "Schutzbrille der Konzentration", "Zauberstift des Beweises",
-    "Kompass der Richtung", "Rucksack der Ideen", "Lineal des Gleichgewichts",
-    "Lampe des Einfalls", "Formelbuch des Wissens", "Tasche der Zufälle",
-    "Würfel der Wahrscheinlichkeit", "Chronometer der Geduld",
-    "Mantel der Logik", "Rechenbrett des Ausgleichs", "Trank der Übersicht",
-    "Kristall des Beweises", "Talisman der Motivation",
+    "Zirkel der Präzision","Rechenamulett","Logikstein","Notizrolle der Klarheit",
+    "Schutzbrille der Konzentration","Zauberstift des Beweises","Kompass der Richtung",
+    "Rucksack der Ideen","Lineal des Gleichgewichts","Lampe des Einfalls",
+    "Formelbuch des Wissens","Tasche der Zufälle","Würfel der Wahrscheinlichkeit",
+    "Chronometer der Geduld","Mantel der Logik","Rechenbrett des Ausgleichs",
+    "Trank der Übersicht","Kristall des Beweises","Talisman der Motivation",
     "Zauberstab des Verständnisses"
 ];
 
@@ -159,8 +179,9 @@ app.post("/api/auth/login", async (req, res) => {
     });
 });
 
+
 // =====================================================================
-// =======================  STUDENT-BEREICH  ============================
+// =======================  STUDENT-BEREICH  ===========================
 // =====================================================================
 
 // ----------------------------------------------------
@@ -174,16 +195,15 @@ app.post("/api/student/first-login", async (req, res) => {
 
     const user = r.rows[0];
 
-    // Falls schon vorhanden → überspringen
+    // Überspringen, falls schon vorhanden
     if (user.character_id && user.traits && user.items) {
         return res.json({ skip: true });
     }
 
-    // Zufälligen Charakter wählen
+    // zufälligen Charakter holen
     const charRes = await query("SELECT id FROM characters ORDER BY RANDOM() LIMIT 1");
     const randomCharId = charRes.rows[0]?.id || null;
 
-    // Traits + Items
     const traits = pickThree(TRAITS);
     const items = pickThree(ITEMS);
 
@@ -195,9 +215,8 @@ app.post("/api/student/first-login", async (req, res) => {
     res.json({ character_id: randomCharId, traits, items });
 });
 
-
 // ----------------------------------------------------
-// STUDENT: /me (alle Daten zum Schüler)
+// STUDENT: /me (alle Daten)
 // ----------------------------------------------------
 app.get("/api/student/me/:id", async (req, res) => {
     const userId = req.params.id;
@@ -208,7 +227,6 @@ app.get("/api/student/me/:id", async (req, res) => {
     const user = r.rows[0];
 
     let character = null;
-
     if (user.character_id) {
         const c = await query("SELECT * FROM characters WHERE id=$1", [user.character_id]);
         character = c.rows[0] || null;
@@ -227,23 +245,20 @@ app.get("/api/student/me/:id", async (req, res) => {
 });
 
 // ----------------------------------------------------
-// STUDENT: Uploads anzeigen
+// STUDENT: Upload-Liste
 // ----------------------------------------------------
 app.get("/api/student/uploads/:id", async (req, res) => {
-    const id = req.params.id;
-
     const r = await query(
         "SELECT * FROM student_uploads WHERE student_id=$1 ORDER BY id DESC",
-        [id]
+        [req.params.id]
     );
-
     res.json(r.rows);
 });
 
 // =====================================================================
 // =========================  ADMIN-BEREICH  ============================
 // =====================================================================
-// (UNVERÄNDERT GELASSEN)
+/// ⚠️ Admin-Teil unverändert (1:1 gelassen)
 // ----------------------------------------------------
 // KLASSEN
 // ----------------------------------------------------
@@ -438,7 +453,7 @@ app.delete("/api/admin/characters/:id", async (req, res) => {
 });
 
 // ----------------------------------------------------
-// STUDENT-UPLOAD-ADMIN
+// STUDENT-UPLOAD ADMIN
 // ----------------------------------------------------
 app.get("/api/admin/uploads/:student_id", async (req, res) => {
     const r = await query(
@@ -475,6 +490,8 @@ app.delete("/api/admin/uploads/:id", async (req, res) => {
 // ----------------------------------------------------
 const PORT = process.env.PORT || 3000;
 
-migrate().then(() => {
-    app.listen(PORT, () => console.log("Server läuft auf Port", PORT));
-});
+migrate()
+    .then(autoFixColumns)
+    .then(() => {
+        app.listen(PORT, () => console.log("Server läuft auf Port", PORT));
+    });
