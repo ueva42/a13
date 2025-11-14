@@ -1,90 +1,227 @@
 <!DOCTYPE html>
-<html>
+<html lang="de">
 <head>
-    <meta charset="UTF-8">
-    <title>Admin Panel</title>
-    <style>
-        body { font-family: sans-serif; padding: 20px; }
-        h2 { margin-top: 40px; }
-        input, button, select { padding: 8px; margin: 5px 0; display: block; }
-        .box { border: 1px solid #ccc; padding: 20px; margin-bottom: 30px; }
-    </style>
+  <meta charset="UTF-8" />
+  <title>Temple of Logic – Admin</title>
+  <style>
+    body {
+      background: #0f0f14;
+      color: #f5f5f5;
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 1rem;
+    }
+
+    h1 {
+      color: #80f0d0;
+    }
+
+    #classes-section {
+      margin-top: 1.5rem;
+      padding: 1rem;
+      background: #14141c;
+      border-radius: 10px;
+      box-shadow: 0 0 10px #000;
+    }
+
+    #class-form {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+
+    #new-class-name {
+      flex: 1;
+      padding: 0.5rem;
+      background: #0f0f14;
+      border: 1px solid #333;
+      color: #fff;
+    }
+
+    #create-class-btn {
+      background: #6a4df4;
+      border: none;
+      padding: 0.6rem 1rem;
+      border-radius: 6px;
+      color: white;
+      cursor: pointer;
+    }
+
+    #classes-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    .class-item {
+      background: #1a1a24;
+      padding: 0.5rem;
+      margin-bottom: 0.4rem;
+      border-radius: 6px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .badge-active {
+      margin-left: 0.5rem;
+      padding: 0.2rem 0.5rem;
+      font-size: 0.75rem;
+      background: #80f0d0;
+      color: #000;
+      border-radius: 999px;
+    }
+
+    .class-actions button {
+      margin-left: 0.3rem;
+      padding: 0.3rem 0.5rem;
+      cursor: pointer;
+      border-radius: 4px;
+      border: none;
+      font-size: 0.8rem;
+    }
+
+    .btn-select-class {
+      background: #6a4df4;
+      color: white;
+    }
+
+    .btn-delete-class {
+      background: #3a1010;
+      color: #ffb3b3;
+    }
+
+    #classes-error {
+      color: #ff6b6b;
+      margin-top: 0.5rem;
+    }
+  </style>
 </head>
 <body>
 
-<h1>Admin Bereich</h1>
+<h1>Admin – Klassenverwaltung</h1>
 
-<p><b>Du bist eingeloggt als Admin.</b></p>
+<section id="classes-section">
+  <h2>Klassen</h2>
 
-<!-- Klassen -->
-<div class="box">
-    <h2>Klasse anlegen</h2>
-    <input id="className" placeholder="Klassenname">
-    <button onclick="createClass()">Erstellen</button>
-    <p id="classResult"></p>
-</div>
+  <div id="class-form">
+    <input id="new-class-name" placeholder="Neue Klasse (z. B. 7a)" />
+    <button id="create-class-btn">Anlegen</button>
+  </div>
 
-<!-- Schüler -->
-<div class="box">
-    <h2>Schüler anlegen</h2>
-    <input id="studentName" placeholder="Name des Schülers">
-    <input id="studentPass" placeholder="Passwort">
-    <button onclick="createStudent()">Erstellen</button>
-    <p id="studentResult"></p>
-</div>
-
-<!-- Missionen -->
-<div class="box">
-    <h2>Mission anlegen</h2>
-    <input id="missionTitle" placeholder="Titel">
-    <input id="missionDesc" placeholder="Beschreibung">
-    <input id="missionXP" placeholder="XP" type="number">
-    <button onclick="createMission()">Erstellen</button>
-    <p id="missionResult"></p>
-</div>
-
+  <ul id="classes-list"></ul>
+  <p id="classes-error"></p>
+</section>
 
 <script>
-async function createClass() {
-    const name = document.getElementById("className").value;
-    const r = await fetch("/api/admin/class/create", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({ name })
+  const listEl = document.getElementById("classes-list");
+  const nameInput = document.getElementById("new-class-name");
+  const errorEl = document.getElementById("classes-error");
+
+  let activeClassId = null;
+
+  async function loadClasses() {
+    errorEl.textContent = "";
+    const res = await fetch("/api/admin/classes");
+    const data = await res.json();
+    activeClassId = data.activeClassId;
+    renderClasses(data.classes);
+  }
+
+  function renderClasses(classes) {
+    listEl.innerHTML = "";
+
+    classes.forEach((c) => {
+      const li = document.createElement("li");
+      li.className = "class-item";
+
+      const name = document.createElement("div");
+      name.textContent = c.name;
+
+      if (c.id === activeClassId) {
+        const badge = document.createElement("span");
+        badge.className = "badge-active";
+        badge.textContent = "aktiv";
+        name.appendChild(badge);
+      }
+
+      const actions = document.createElement("div");
+      actions.className = "class-actions";
+
+      const btnSel = document.createElement("button");
+      btnSel.textContent = "Auswählen";
+      btnSel.className = "btn-select-class";
+      btnSel.onclick = () => setActiveClass(c.id);
+
+      const btnDel = document.createElement("button");
+      btnDel.textContent = "Löschen";
+      btnDel.className = "btn-delete-class";
+      btnDel.onclick = () => deleteClass(c.id, c.name);
+
+      actions.appendChild(btnSel);
+      actions.appendChild(btnDel);
+
+      li.appendChild(name);
+      li.appendChild(actions);
+
+      listEl.appendChild(li);
+    });
+  }
+
+  async function createClass() {
+    const name = nameInput.value.trim();
+    if (!name) return;
+
+    const res = await fetch("/api/admin/classes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
     });
 
-    const data = await r.json();
-    document.getElementById("classResult").innerText = data.success ? "Erstellt." : data.error;
-}
+    const data = await res.json();
+    if (!res.ok) {
+      errorEl.textContent = data.error;
+      return;
+    }
 
-async function createStudent() {
-    const name = document.getElementById("studentName").value;
-    const password = document.getElementById("studentPass").value;
+    nameInput.value = "";
+    loadClasses();
+  }
 
-    const r = await fetch("/api/admin/student/create", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({ name, password })
+  async function deleteClass(id, name) {
+    if (!confirm(`Klasse "${name}" löschen?`)) return;
+
+    const res = await fetch(`/api/admin/classes/${id}`, { method: "DELETE" });
+    const data = await res.json();
+
+    if (!res.ok) {
+      errorEl.textContent = data.error;
+      return;
+    }
+
+    loadClasses();
+  }
+
+  async function setActiveClass(id) {
+    const res = await fetch("/api/admin/classes/active", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ classId: id }),
     });
 
-    const data = await r.json();
-    document.getElementById("studentResult").innerText = data.success ? "Erstellt." : data.error;
-}
+    const data = await res.json();
+    if (!res.ok) {
+      errorEl.textContent = data.error;
+      return;
+    }
 
-async function createMission() {
-    const title = document.getElementById("missionTitle").value;
-    const description = document.getElementById("missionDesc").value;
-    const xp = parseInt(document.getElementById("missionXP").value);
+    activeClassId = id;
+    loadClasses();
+  }
 
-    const r = await fetch("/api/admin/mission/create", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({ title, description, xp })
-    });
+  document.getElementById("create-class-btn").onclick = createClass;
 
-    const data = await r.json();
-    document.getElementById("missionResult").innerText = data.success ? "Erstellt." : data.error;
-}
+  loadClasses();
 </script>
 
 </body>
