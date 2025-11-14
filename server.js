@@ -1,5 +1,5 @@
 // ==========================================
-// server.js – Temple of Logic (AUTO-FIX VERSION)
+// server.js – Temple of Logic (FINAL FIX)
 // ==========================================
 
 import express from "express";
@@ -16,7 +16,7 @@ dotenv.config();
 // DB --------------------------------------
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  ssl: { rejectUnauthorized: false }
 });
 
 export async function query(q, params) {
@@ -36,12 +36,14 @@ const uploadFolder = path.join(__dirname, "public", "uploads");
 if (!fs.existsSync(uploadFolder)) fs.mkdirSync(uploadFolder, { recursive: true });
 
 // ------------------------------------------
-// MIGRATION (inkl. AUTO-FIX für Missions)
+// MIGRATION (drop + create Mission Tables SAUBER)
 // ------------------------------------------
 async function migrate() {
   console.log("Starte Migration…");
 
-  // CLASSES
+  // ======================
+  // KLASSEN
+  // ======================
   await query(`
     CREATE TABLE IF NOT EXISTS classes (
       id SERIAL PRIMARY KEY,
@@ -49,7 +51,9 @@ async function migrate() {
     );
   `);
 
-  // USERS
+  // ======================
+  // USER
+  // ======================
   await query(`
     CREATE TABLE IF NOT EXISTS users (
       id SERIAL PRIMARY KEY,
@@ -63,24 +67,23 @@ async function migrate() {
     );
   `);
 
-  // *** MISSIONS AUTO-FIX ***
-  // DROP alte Tabelle falls falsche Spalten existieren
+  // ======================
+  // MISSIONS – SAUBER DROPPEN + NEU ERSTELLEN
+  // ======================
+
+  // Abhängige Tabellen droppen
   await query(`
-    DO $$
-    BEGIN
-      IF EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name='missions'
-        AND column_name NOT IN ('id','title','xp_reward','image_url','requires_upload','created_at')
-      ) THEN
-        DROP TABLE missions;
-      END IF;
-    END $$;
+    DROP TABLE IF EXISTS student_mission_uploads CASCADE;
   `);
 
-  // MISSIONS (korrekt)
+  // Missions-Tabelle droppen (jetzt safe)
   await query(`
-    CREATE TABLE IF NOT EXISTS missions (
+    DROP TABLE IF EXISTS missions CASCADE;
+  `);
+
+  // Missions-Tabelle neu erstellen
+  await query(`
+    CREATE TABLE missions (
       id SERIAL PRIMARY KEY,
       title TEXT NOT NULL,
       xp_reward INTEGER NOT NULL DEFAULT 0,
@@ -90,19 +93,32 @@ async function migrate() {
     );
   `);
 
+  // Upload-Tabelle wieder erstellen
+  await query(`
+    CREATE TABLE student_mission_uploads (
+      id SERIAL PRIMARY KEY,
+      student_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      mission_id INTEGER REFERENCES missions(id) ON DELETE CASCADE,
+      file_url TEXT,
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+  `);
+
+  // ======================
   // DEFAULT ADMIN
+  // ======================
   await query(`
     INSERT INTO users (name, password, role)
-    VALUES ('admin','admin','admin')
+    VALUES ('admin', 'admin', 'admin')
     ON CONFLICT (name) DO NOTHING;
   `);
 
   console.log("Migration abgeschlossen.");
 }
 
-// ------------------------------------
-// EXPRESS APP
-// ------------------------------------
+// ----------------------------------------------------
+// EXPRESS SETUP
+// ----------------------------------------------------
 const app = express();
 
 app.use(cors());
@@ -118,17 +134,15 @@ app.post("/api/auth/login", async (req, res) => {
 
   const r = await query("SELECT * FROM users WHERE name=$1 AND password=$2", [
     name,
-    password,
+    password
   ]);
 
-  if (!r.rows[0]) {
-    return res.status(400).json({ error: "Login fehlgeschlagen" });
-  }
+  if (!r.rows[0]) return res.status(400).json({ error: "Login fehlgeschlagen" });
 
   res.json({
     id: r.rows[0].id,
     name: r.rows[0].name,
-    role: r.rows[0].role,
+    role: r.rows[0].role
   });
 });
 
@@ -136,14 +150,13 @@ app.post("/api/auth/login", async (req, res) => {
 // KLASSEN
 // ----------------------------------------------------
 app.get("/api/admin/classes", async (req, res) => {
-  const classes = await query("SELECT id, name FROM classes ORDER BY name ASC");
-  res.json({ classes: classes.rows });
+  const r = await query("SELECT id, name FROM classes ORDER BY name ASC");
+  res.json({ classes: r.rows });
 });
 
 app.post("/api/admin/classes", async (req, res) => {
-  const { name } = req.body;
   try {
-    await query("INSERT INTO classes (name) VALUES ($1)", [name]);
+    await query("INSERT INTO classes (name) VALUES ($1)", [req.body.name]);
     res.json({ success: true });
   } catch {
     res.status(400).json({ error: "Klasse existiert bereits" });
@@ -164,12 +177,10 @@ app.get("/api/admin/missions", async (req, res) => {
 });
 
 app.post("/api/admin/missions", async (req, res) => {
-  const title = req.body.title;
-  const xp = Number(req.body.xp_reward);
-  const requiresUpload = req.body.requires_upload === "true";
+  const { title, xp_reward, requires_upload } = req.body;
 
-  if (!title || !xp) {
-    return res.status(400).json({ error: "Titel und XP benötigt" });
+  if (!title || !xp_reward) {
+    return res.status(400).json({ error: "Titel und XP nötig" });
   }
 
   let imageUrl = null;
@@ -177,15 +188,15 @@ app.post("/api/admin/missions", async (req, res) => {
   if (req.files && req.files.image) {
     const img = req.files.image;
     const filename = "mission_" + Date.now() + "_" + img.name;
-    const dest = path.join(uploadFolder, filename);
-    await img.mv(dest);
+    const fullPath = path.join(uploadFolder, filename);
+    await img.mv(fullPath);
     imageUrl = "/uploads/" + filename;
   }
 
   await query(
     `INSERT INTO missions (title, xp_reward, image_url, requires_upload)
      VALUES ($1,$2,$3,$4)`,
-    [title, xp, imageUrl, requiresUpload]
+    [title, xp_reward, imageUrl, requires_upload === "true"]
   );
 
   res.json({ success: true });
@@ -201,7 +212,9 @@ app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "login.html"));
 });
 
-// START ----------------------------------------------
+// ----------------------------------------------------
+// START
+// ----------------------------------------------------
 migrate().then(() => {
   const PORT = process.env.PORT || 3000;
   app.listen(PORT, () => console.log("Server läuft auf Port", PORT));
