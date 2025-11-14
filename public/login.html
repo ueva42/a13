@@ -19,8 +19,12 @@ async function login() {
   });
 
   const data = await r.json();
-
   if (!r.ok) return alert(data.error);
+
+  // LOGIN SPEICHERN
+  localStorage.setItem("id", data.id);
+  localStorage.setItem("name", data.name);
+  localStorage.setItem("role", data.role);
 
   if (data.role === "admin") location.href = "admin.html";
   else location.href = "student.html";
