@@ -1,5 +1,5 @@
 // ==========================================
-// server.js – Temple of Logic (FINAL + CHARACTERS)
+// server.js – Temple of Logic (FINAL + LEVELS)
 // ==========================================
 
 import express from "express";
@@ -36,7 +36,6 @@ export async function query(q, params) {
 async function migrate() {
     console.log("Starte Migration…");
 
-    // Klassen Tabelle
     await query(`
         CREATE TABLE IF NOT EXISTS classes (
             id SERIAL PRIMARY KEY,
@@ -44,7 +43,15 @@ async function migrate() {
         );
     `);
 
-    // User Tabelle
+    await query(`
+        CREATE TABLE IF NOT EXISTS characters (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            image_url TEXT,
+            created_at TIMESTAMP DEFAULT NOW()
+        );
+    `);
+
     await query(`
         CREATE TABLE IF NOT EXISTS users (
             id SERIAL PRIMARY KEY,
@@ -59,7 +66,6 @@ async function migrate() {
         );
     `);
 
-    // Missionen
     await query(`
         CREATE TABLE IF NOT EXISTS missions (
             id SERIAL PRIMARY KEY,
@@ -71,7 +77,6 @@ async function migrate() {
         );
     `);
 
-    // Schüler-Uploads
     await query(`
         CREATE TABLE IF NOT EXISTS student_uploads (
             id SERIAL PRIMARY KEY,
@@ -81,7 +86,6 @@ async function migrate() {
         );
     `);
 
-    // Bonuskarten
     await query(`
         CREATE TABLE IF NOT EXISTS bonus_cards (
             id SERIAL PRIMARY KEY,
@@ -92,13 +96,12 @@ async function migrate() {
         );
     `);
 
-    // Charaktere
+    // ⭐ NEW: LEVELS
     await query(`
-        CREATE TABLE IF NOT EXISTS characters (
+        CREATE TABLE IF NOT EXISTS levels (
             id SERIAL PRIMARY KEY,
             name TEXT NOT NULL,
-            image_url TEXT,
-            created_at TIMESTAMP DEFAULT NOW()
+            xp_required INTEGER NOT NULL
         );
     `);
 
@@ -120,7 +123,6 @@ const __dirname = path.dirname(__filename);
 const uploadFolder = path.join(__dirname, "public", "uploads");
 if (!fs.existsSync(uploadFolder)) fs.mkdirSync(uploadFolder, { recursive: true });
 
-// Static Files
 app.use(express.static(path.join(__dirname, "public")));
 
 // ----------------------------------------------------
@@ -143,7 +145,7 @@ app.post("/api/auth/login", async (req, res) => {
 });
 
 // ----------------------------------------------------
-// KLASSEN – Admin
+// KLASSEN
 // ----------------------------------------------------
 app.get("/api/admin/classes", async (req, res) => {
     const r = await query("SELECT * FROM classes ORDER BY name ASC");
@@ -161,7 +163,7 @@ app.delete("/api/admin/classes/:id", async (req, res) => {
 });
 
 // ----------------------------------------------------
-// SCHÜLER – Admin
+// STUDENTS
 // ----------------------------------------------------
 app.get("/api/admin/students/:class_id", async (req, res) => {
     const r = await query(
@@ -210,7 +212,6 @@ app.post("/api/admin/xp/class", async (req, res) => {
     res.json({ success: true });
 });
 
-// Mission → Schüler
 app.post("/api/admin/xp/mission-students", async (req, res) => {
     const { student_ids, mission_id } = req.body;
 
@@ -227,7 +228,6 @@ app.post("/api/admin/xp/mission-students", async (req, res) => {
     res.json({ success: true });
 });
 
-// Mission → Klasse
 app.post("/api/admin/xp/mission-class", async (req, res) => {
     const { class_id, mission_id } = req.body;
 
@@ -243,7 +243,7 @@ app.post("/api/admin/xp/mission-class", async (req, res) => {
 });
 
 // ----------------------------------------------------
-// MISSIONEN
+// MISSIONS
 // ----------------------------------------------------
 app.get("/api/admin/missions", async (req, res) => {
     const r = await query("SELECT * FROM missions ORDER BY id DESC");
@@ -291,7 +291,7 @@ app.delete("/api/admin/uploads/:id", async (req, res) => {
 });
 
 // ----------------------------------------------------
-// BONUSKARTEN
+// BONUS CARDS
 // ----------------------------------------------------
 app.get("/api/admin/bonus", async (req, res) => {
     const r = await query("SELECT * FROM bonus_cards ORDER BY id DESC");
@@ -323,7 +323,7 @@ app.delete("/api/admin/bonus/:id", async (req, res) => {
 });
 
 // ----------------------------------------------------
-// CHARACTERS (NEU)
+// CHARACTERS
 // ----------------------------------------------------
 app.get("/api/admin/characters", async (req, res) => {
     const r = await query("SELECT * FROM characters ORDER BY id DESC");
@@ -355,7 +355,31 @@ app.delete("/api/admin/characters/:id", async (req, res) => {
 });
 
 // ----------------------------------------------------
-// START
+// ⭐ LEVELS ENDPOINTS
+// ----------------------------------------------------
+app.get("/api/admin/levels", async (req, res) => {
+    const r = await query("SELECT * FROM levels ORDER BY xp_required ASC");
+    res.json(r.rows);
+});
+
+app.post("/api/admin/levels", async (req, res) => {
+    const { name, xp_required } = req.body;
+
+    await query(
+        "INSERT INTO levels (name, xp_required) VALUES ($1,$2)",
+        [name, xp_required]
+    );
+
+    res.json({ success: true });
+});
+
+app.delete("/api/admin/levels/:id", async (req, res) => {
+    await query("DELETE FROM levels WHERE id=$1", [req.params.id]);
+    res.json({ success: true });
+});
+
+// ----------------------------------------------------
+// START SERVER
 // ----------------------------------------------------
 const PORT = process.env.PORT || 3000;
 

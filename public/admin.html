@@ -84,7 +84,6 @@
       margin-top: 0.5rem;
     }
 
-    /* Upload-Popup */
     #upload-popup {
       display: none;
       position: fixed;
@@ -222,6 +221,21 @@
   </form>
 
   <div id="character-list"></div>
+</div>
+
+
+<!-- =============================================================== -->
+<!-- LEVEL -->
+<!-- =============================================================== -->
+<div class="box">
+  <h2>Level</h2>
+
+  <input id="level-name" placeholder="Levelname (z. B. Lehrling)">
+  <input id="level-xp" type="number" placeholder="Benötigte XP">
+
+  <button class="btn-primary" onclick="createLevel()">Anlegen</button>
+
+  <div id="level-list"></div>
 </div>
 
 
@@ -588,6 +602,52 @@ async function deleteCharacter(id) {
 
 
 // ====================================================================
+// LEVELS
+// ====================================================================
+async function loadLevels() {
+  const res = await fetch("/api/admin/levels");
+  const levels = await res.json();
+
+  const box = document.getElementById("level-list");
+  box.innerHTML = "";
+
+  levels.forEach(l => {
+    box.innerHTML += `
+      <div class="entry">
+        <div>
+          <strong>${l.name}</strong><br>
+          benötigt: ${l.xp_required} XP
+        </div>
+        <button class="btn-danger" onclick="deleteLevel(${l.id})">Löschen</button>
+      </div>`;
+  });
+}
+
+async function createLevel() {
+  const name = document.getElementById("level-name").value.trim();
+  const xp = Number(document.getElementById("level-xp").value);
+
+  if (!name || !xp) return;
+
+  await fetch("/api/admin/levels", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, xp_required: xp })
+  });
+
+  document.getElementById("level-name").value = "";
+  document.getElementById("level-xp").value = "";
+
+  loadLevels();
+}
+
+async function deleteLevel(id) {
+  await fetch(`/api/admin/levels/${id}`, { method:"DELETE" });
+  loadLevels();
+}
+
+
+// ====================================================================
 // UPLOAD POPUP
 // ====================================================================
 async function openUploads(studentId) {
@@ -629,6 +689,7 @@ loadClasses();
 loadMissions();
 loadBonus();
 loadCharacters();
+loadLevels();
 
 document.getElementById("student-class-select").onchange = () => {
   loadStudents();
