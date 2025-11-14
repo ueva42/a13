@@ -1,125 +1,126 @@
-// ================================
-// routes/admin.js – FERTIGER CODE
-// ================================
+// ==========================================
+// server.js – Temple of Logic (VOLLSTÄNDIG)
+// ==========================================
+
 import express from "express";
-import { query } from "../db.js";
+import fileUpload from "express-fileupload";
+import cors from "cors";
+import dotenv from "dotenv";
+import pg from "pg";
 import path from "path";
 import { fileURLToPath } from "url";
 
-const router = express.Router();
+// Router
+import adminRouter from "./routes/admin.js";
 
-// Upload-Pfad bestimmen
+dotenv.config();
+
+// ----------------------------------------------------
+// PostgreSQL Verbindung
+// ----------------------------------------------------
+const pool = new pg.Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false },
+});
+
+export async function query(q, params) {
+    const client = await pool.connect();
+    try {
+        return await client.query(q, params);
+    } finally {
+        client.release();
+    }
+}
+
+// ----------------------------------------------------
+// MIGRATION
+// ----------------------------------------------------
+async function migrate() {
+    console.log("Starte Migration…");
+
+    // CLASSES
+    await query(`
+        CREATE TABLE IF NOT EXISTS classes (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE
+        );
+    `);
+
+    // USERS
+    await query(`
+        CREATE TABLE IF NOT EXISTS users (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            password TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'student',
+            class_id INTEGER REFERENCES classes(id) ON DELETE SET NULL,
+            xp INTEGER DEFAULT 0,
+            highest_xp INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT NOW()
+        );
+    `);
+
+    // MISSIONS
+    await query(`
+        CREATE TABLE IF NOT EXISTS missions (
+            id SERIAL PRIMARY KEY,
+            title TEXT NOT NULL,
+            description TEXT,
+            xp_reward INTEGER NOT NULL DEFAULT 0,
+            image_url TEXT,
+            requires_upload BOOLEAN DEFAULT false,
+            created_at TIMESTAMP DEFAULT NOW()
+        );
+    `);
+
+    console.log("Migration abgeschlossen.");
+}
+
+// ----------------------------------------------------
+// EXPRESS APP
+// ----------------------------------------------------
+const app = express();
+
+// Grundlegende Middleware
+app.use(cors());
+app.use(express.json());
+app.use(fileUpload());
+
+// Pfade berechnen
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const uploadDir = path.join(__dirname, "..", "public", "uploads");
 
-// ====================================
-// KLASSEN
-// ====================================
+// Static Files (Frontend)
+app.use(express.static(path.join(__dirname, "public")));
 
-// Klasse anlegen
-router.post("/class/create", async (req, res) => {
-    const { name } = req.body;
+// Upload-Verzeichnis sicherstellen
+import fs from "fs";
+const uploadDir = path.join(__dirname, "public", "uploads");
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+}
 
-    try {
-        await query("INSERT INTO classes (name) VALUES ($1)", [name]);
-        res.json({ success: true });
-    } catch (err) {
-        res.status(400).json({ error: "Klasse existiert bereits" });
-    }
+// ----------------------------------------------------
+// ROUTEN
+// ----------------------------------------------------
+app.use("/api/admin", adminRouter);
+
+// Standardroute → index.html / login.html / admin.html / student.html
+app.get("/", (req, res) => {
+    res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-// ====================================
-// SCHÜLER
-// ====================================
+// ----------------------------------------------------
+// SERVER STARTEN
+// ----------------------------------------------------
+const PORT = process.env.PORT || 3000;
 
-// Schüler anlegen
-router.post("/student/create", async (req, res) => {
-    const { name, password, class_id } = req.body;
-
-    try {
-        await query(
-            "INSERT INTO users (name, password, role, class_id) VALUES ($1,$2,'student',$3)",
-            [name, password, class_id]
+migrate()
+    .then(() => {
+        app.listen(PORT, () =>
+            console.log(`Server läuft auf Port ${PORT}`)
         );
-        res.json({ success: true });
-    } catch (err) {
-        console.error(err);
-        res.status(400).json({ error: "Fehler beim Anlegen des Schülers" });
-    }
-});
-
-// ====================================
-// MISSIONEN
-// ====================================
-
-// Mission anlegen
-router.post("/mission/create", async (req, res) => {
-    const { title, description, xp, requires_upload } = req.body;
-
-    if (!title || !xp) {
-        return res.status(400).json({ error: "Titel und XP sind Pflichtfelder" });
-    }
-
-    let imageUrl = null;
-
-    try {
-        // Falls ein Bild hochgeladen wurde
-        if (req.files && req.files.image) {
-            const img = req.files.image;
-
-            const filename = "mission_" + Date.now() + "_" + img.name;
-            const uploadPath = path.join(uploadDir, filename);
-
-            await img.mv(uploadPath);
-
-            imageUrl = "/uploads/" + filename;
-        }
-
-        await query(
-            `INSERT INTO missions (title, description, xp_reward, image_url, requires_upload)
-             VALUES ($1, $2, $3, $4, $5)`,
-            [
-                title,
-                description || "",
-                xp,
-                imageUrl,
-                requires_upload === "true"
-            ]
-        );
-
-        res.json({ success: true });
-    } catch (err) {
-        console.error("Fehler Mission erstellen:", err);
-        res.status(400).json({ error: "Mission konnte nicht angelegt werden" });
-    }
-});
-
-// Missionen ausgeben
-router.get("/mission/list", async (req, res) => {
-    try {
-        const missions = await query(
-            "SELECT id, title, description, xp_reward, image_url, requires_upload FROM missions ORDER BY id DESC"
-        );
-
-        res.json({ success: true, missions: missions.rows });
-    } catch (err) {
-        console.error("Fehler Missionen laden:", err);
-        res.status(500).json({ error: "Fehler beim Laden" });
-    }
-});
-
-// Mission löschen
-router.delete("/mission/delete/:id", async (req, res) => {
-    const id = req.params.id;
-
-    try {
-        await query("DELETE FROM missions WHERE id = $1", [id]);
-        res.json({ success: true });
-    } catch (err) {
-        console.error("Fehler beim Löschen:", err);
-        res.status(400).json({ error: "Mission konnte nicht gelöscht werden" });
-    }
-});
-
-export default router;
+    })
+    .catch((err) => {
+        console.error("Migration fehlgeschlagen:", err);
+    });
