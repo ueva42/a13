@@ -1,29 +1,30 @@
 <!DOCTYPE html>
-<html>
-<body>
+<html lang="de">
+<body style="background:#0f0f14; color:white; font-family:Arial; padding:2rem">
 <h2>Login</h2>
-<input id="name" placeholder="Name">
-<input id="pass" placeholder="Passwort">
+
+<input id="name" placeholder="Name" style="display:block; margin-bottom:1rem;">
+<input id="pass" placeholder="Passwort" type="password" style="display:block; margin-bottom:1rem;">
 <button onclick="login()">Login</button>
 
 <script>
 async function login() {
-    const r = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({
-            name: document.getElementById("name").value,
-            password: document.getElementById("pass").value
-        })
-    });
+  const r = await fetch("/api/auth/login", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      name: document.getElementById("name").value,
+      password: document.getElementById("pass").value
+    })
+  });
 
-    const data = await r.json();
+  const data = await r.json();
 
-    if (data.role === "admin") location.href = "admin.html";
-    else if (data.role === "student") location.href = "student.html";
-    else alert(data.error);
+  if (!r.ok) return alert(data.error);
+
+  if (data.role === "admin") location.href = "admin.html";
+  else location.href = "student.html";
 }
 </script>
-
 </body>
 </html>

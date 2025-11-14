@@ -1,228 +1,126 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8" />
-  <title>Temple of Logic – Admin</title>
-  <style>
-    body {
-      background: #0f0f14;
-      color: #f5f5f5;
-      font-family: Arial, sans-serif;
-      margin: 0;
-      padding: 1rem;
-    }
-
-    h1 {
-      color: #80f0d0;
-    }
-
-    #classes-section {
-      margin-top: 1.5rem;
-      padding: 1rem;
-      background: #14141c;
-      border-radius: 10px;
-      box-shadow: 0 0 10px #000;
-    }
-
-    #class-form {
-      display: flex;
-      gap: 0.5rem;
-      margin-bottom: 1rem;
-    }
-
-    #new-class-name {
-      flex: 1;
-      padding: 0.5rem;
-      background: #0f0f14;
-      border: 1px solid #333;
-      color: #fff;
-    }
-
-    #create-class-btn {
-      background: #6a4df4;
-      border: none;
-      padding: 0.6rem 1rem;
-      border-radius: 6px;
-      color: white;
-      cursor: pointer;
-    }
-
-    #classes-list {
-      list-style: none;
-      padding: 0;
-      margin: 0;
-    }
-
-    .class-item {
-      background: #1a1a24;
-      padding: 0.5rem;
-      margin-bottom: 0.4rem;
-      border-radius: 6px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .badge-active {
-      margin-left: 0.5rem;
-      padding: 0.2rem 0.5rem;
-      font-size: 0.75rem;
-      background: #80f0d0;
-      color: #000;
-      border-radius: 999px;
-    }
-
-    .class-actions button {
-      margin-left: 0.3rem;
-      padding: 0.3rem 0.5rem;
-      cursor: pointer;
-      border-radius: 4px;
-      border: none;
-      font-size: 0.8rem;
-    }
-
-    .btn-select-class {
-      background: #6a4df4;
-      color: white;
-    }
-
-    .btn-delete-class {
-      background: #3a1010;
-      color: #ffb3b3;
-    }
-
-    #classes-error {
-      color: #ff6b6b;
-      margin-top: 0.5rem;
-    }
-  </style>
+<meta charset="UTF-8">
+<title>Admin</title>
+<style>
+body { background:#0f0f14; color:#f5f5f5; font-family:Arial; padding:1rem; }
+h1 { color:#80f0d0; }
+.box { background:#14141c; padding:1rem; border-radius:10px; margin-bottom:2rem; }
+button { cursor:pointer; }
+</style>
 </head>
 <body>
 
-<h1>Admin – Klassenverwaltung</h1>
+<h1>Admin Bereich</h1>
+<button onclick="logout()">Logout</button>
 
-<section id="classes-section">
-  <h2>Klassen</h2>
+<!-- ===================== -->
+<!-- KLASSEN -->
+<!-- ===================== -->
+<div class="box">
+<h2>Klassen</h2>
 
-  <div id="class-form">
-    <input id="new-class-name" placeholder="Neue Klasse (z. B. 7a)" />
-    <button id="create-class-btn">Anlegen</button>
-  </div>
+<input id="class-name" placeholder="Neue Klasse">
+<button onclick="createClass()">Anlegen</button>
 
-  <ul id="classes-list"></ul>
-  <p id="classes-error"></p>
-</section>
+<div id="class-list"></div>
+</div>
+
+<!-- ===================== -->
+<!-- MISSIONEN -->
+<!-- ===================== -->
+<div class="box">
+<h2>Missionen</h2>
+
+<form id="mission-form" enctype="multipart/form-data">
+<input name="title" placeholder="Titel"><br><br>
+<textarea name="description" placeholder="Beschreibung"></textarea><br><br>
+<input name="xp_reward" type="number" placeholder="XP"><br><br>
+<label><input type="checkbox" name="requires_upload"> Schüler müssen Bild hochladen</label><br><br>
+<input type="file" name="image"><br><br>
+<button type="submit">Mission anlegen</button>
+</form>
+
+<div id="mission-list"></div>
+</div>
 
 <script>
-  const listEl = document.getElementById("classes-list");
-  const nameInput = document.getElementById("new-class-name");
-  const errorEl = document.getElementById("classes-error");
+function logout() {
+  location.href = "login.html";
+}
 
-  let activeClassId = null;
+// -------------------
+// KLASSEN
+// -------------------
+async function loadClasses() {
+  const r = await fetch("/api/admin/classes");
+  const data = await r.json();
 
-  async function loadClasses() {
-    errorEl.textContent = "";
-    const res = await fetch("/api/admin/classes");
-    const data = await res.json();
-    activeClassId = data.activeClassId;
-    renderClasses(data.classes);
-  }
+  const div = document.getElementById("class-list");
+  div.innerHTML = "";
 
-  function renderClasses(classes) {
-    listEl.innerHTML = "";
+  data.classes.forEach(c => {
+    div.innerHTML += `
+      <div>
+        ${c.name}
+        <button onclick="deleteClass(${c.id})">Löschen</button>
+      </div>`;
+  });
+}
 
-    classes.forEach((c) => {
-      const li = document.createElement("li");
-      li.className = "class-item";
-
-      const name = document.createElement("div");
-      name.textContent = c.name;
-
-      if (c.id === activeClassId) {
-        const badge = document.createElement("span");
-        badge.className = "badge-active";
-        badge.textContent = "aktiv";
-        name.appendChild(badge);
-      }
-
-      const actions = document.createElement("div");
-      actions.className = "class-actions";
-
-      const btnSel = document.createElement("button");
-      btnSel.textContent = "Auswählen";
-      btnSel.className = "btn-select-class";
-      btnSel.onclick = () => setActiveClass(c.id);
-
-      const btnDel = document.createElement("button");
-      btnDel.textContent = "Löschen";
-      btnDel.className = "btn-delete-class";
-      btnDel.onclick = () => deleteClass(c.id, c.name);
-
-      actions.appendChild(btnSel);
-      actions.appendChild(btnDel);
-
-      li.appendChild(name);
-      li.appendChild(actions);
-
-      listEl.appendChild(li);
-    });
-  }
-
-  async function createClass() {
-    const name = nameInput.value.trim();
-    if (!name) return;
-
-    const res = await fetch("/api/admin/classes", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
-    });
-
-    const data = await res.json();
-    if (!res.ok) {
-      errorEl.textContent = data.error;
-      return;
-    }
-
-    nameInput.value = "";
-    loadClasses();
-  }
-
-  async function deleteClass(id, name) {
-    if (!confirm(`Klasse "${name}" löschen?`)) return;
-
-    const res = await fetch(`/api/admin/classes/${id}`, { method: "DELETE" });
-    const data = await res.json();
-
-    if (!res.ok) {
-      errorEl.textContent = data.error;
-      return;
-    }
-
-    loadClasses();
-  }
-
-  async function setActiveClass(id) {
-    const res = await fetch("/api/admin/classes/active", {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({ classId: id }),
-    });
-
-    const data = await res.json();
-    if (!res.ok) {
-      errorEl.textContent = data.error;
-      return;
-    }
-
-    activeClassId = id;
-    loadClasses();
-  }
-
-  document.getElementById("create-class-btn").onclick = createClass;
-
+async function createClass() {
+  const name = document.getElementById("class-name").value;
+  await fetch("/api/admin/classes", {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({name})
+  });
   loadClasses();
-</script>
+}
 
+async function deleteClass(id) {
+  await fetch("/api/admin/classes/" + id, { method:"DELETE" });
+  loadClasses();
+}
+
+// -------------------
+// MISSIONEN
+// -------------------
+async function loadMissions() {
+  const r = await fetch("/api/admin/missions");
+  const list = await r.json();
+  const div = document.getElementById("mission-list");
+
+  div.innerHTML = "";
+  list.forEach(m => {
+    div.innerHTML += `
+    <div style="margin-bottom:1rem;">
+      <b>${m.title}</b> (${m.xp_reward} XP)
+      <button onclick="deleteMission(${m.id})">Löschen</button><br>
+      ${m.image_url ? `<img src="${m.image_url}" width="100">` : ""}
+    </div>`;
+  });
+}
+
+document.getElementById("mission-form").onsubmit = async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  await fetch("/api/admin/missions", {
+    method:"POST",
+    body: fd
+  });
+  loadMissions();
+};
+
+async function deleteMission(id) {
+  await fetch("/api/admin/missions/" + id, { method:"DELETE" });
+  loadMissions();
+}
+
+// -------------------
+loadClasses();
+loadMissions();
+</script>
 </body>
 </html>
