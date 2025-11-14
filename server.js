@@ -1,5 +1,5 @@
 // ==========================================
-// server.js – Temple of Logic (R2 Version)...
+// server.js – Temple of Logic (FINAL VERSION)
 // ==========================================
 
 import express from "express";
@@ -32,6 +32,31 @@ export async function query(q, params) {
 }
 
 // ----------------------------------------------------
+// TRAITS + ITEMS
+// ----------------------------------------------------
+const TRAITS = [
+    "Neugierig", "Ausdauernd", "Kreativ", "Hilfsbereit", "Strukturiert",
+    "Risikofreudig", "Ruhig", "Zielstrebig", "Analytisch", "Teamorientiert",
+    "Selbstkritisch", "Optimistisch", "Aufmerksam", "Pragmatisch", "Mutig",
+    "Sorgfältig", "Logisch denkend", "Erfinderisch", "Geduldig", "Inspirierend"
+];
+
+const ITEMS = [
+    "Zirkel der Präzision", "Rechenamulett", "Logikstein", "Notizrolle der Klarheit",
+    "Schutzbrille der Konzentration", "Zauberstift des Beweises",
+    "Kompass der Richtung", "Rucksack der Ideen", "Lineal des Gleichgewichts",
+    "Lampe des Einfalls", "Formelbuch des Wissens", "Tasche der Zufälle",
+    "Würfel der Wahrscheinlichkeit", "Chronometer der Geduld",
+    "Mantel der Logik", "Rechenbrett des Ausgleichs", "Trank der Übersicht",
+    "Kristall des Beweises", "Talisman der Motivation",
+    "Zauberstab des Verständnisses"
+];
+
+function pickThree(arr) {
+    return [...arr].sort(() => Math.random() - 0.5).slice(0, 3);
+}
+
+// ----------------------------------------------------
 // MIGRATION
 // ----------------------------------------------------
 async function migrate() {
@@ -45,6 +70,15 @@ async function migrate() {
     `);
 
     await query(`
+        CREATE TABLE IF NOT EXISTS characters (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            image_url TEXT,
+            created_at TIMESTAMP DEFAULT NOW()
+        );
+    `);
+
+    await query(`
         CREATE TABLE IF NOT EXISTS users (
             id SERIAL PRIMARY KEY,
             name TEXT NOT NULL UNIQUE,
@@ -54,6 +88,8 @@ async function migrate() {
             xp INTEGER DEFAULT 0,
             highest_xp INTEGER DEFAULT 0,
             character_id INTEGER REFERENCES characters(id),
+            traits JSONB,
+            items JSONB,
             created_at TIMESTAMP DEFAULT NOW()
         );
     `);
@@ -83,15 +119,6 @@ async function migrate() {
             id SERIAL PRIMARY KEY,
             title TEXT NOT NULL,
             xp_cost INTEGER NOT NULL,
-            image_url TEXT,
-            created_at TIMESTAMP DEFAULT NOW()
-        );
-    `);
-
-    await query(`
-        CREATE TABLE IF NOT EXISTS characters (
-            id SERIAL PRIMARY KEY,
-            name TEXT NOT NULL,
             image_url TEXT,
             created_at TIMESTAMP DEFAULT NOW()
         );
@@ -132,6 +159,91 @@ app.post("/api/auth/login", async (req, res) => {
     });
 });
 
+// =====================================================================
+// =======================  STUDENT-BEREICH  ============================
+// =====================================================================
+
+// ----------------------------------------------------
+// FIRST LOGIN – Charakter + Traits + Items generieren
+// ----------------------------------------------------
+app.post("/api/student/first-login", async (req, res) => {
+    const { user_id } = req.body;
+
+    const r = await query("SELECT * FROM users WHERE id=$1", [user_id]);
+    if (!r.rows[0]) return res.status(400).json({ error: "User existiert nicht" });
+
+    const user = r.rows[0];
+
+    // Falls schon vorhanden → überspringen
+    if (user.character_id && user.traits && user.items) {
+        return res.json({ skip: true });
+    }
+
+    // Zufälligen Charakter wählen
+    const charRes = await query("SELECT id FROM characters ORDER BY RANDOM() LIMIT 1");
+    const randomCharId = charRes.rows[0]?.id || null;
+
+    // Traits + Items
+    const traits = pickThree(TRAITS);
+    const items = pickThree(ITEMS);
+
+    await query(
+        "UPDATE users SET character_id=$1, traits=$2, items=$3 WHERE id=$4",
+        [randomCharId, JSON.stringify(traits), JSON.stringify(items), user_id]
+    );
+
+    res.json({ character_id: randomCharId, traits, items });
+});
+
+
+// ----------------------------------------------------
+// STUDENT: /me (alle Daten zum Schüler)
+// ----------------------------------------------------
+app.get("/api/student/me/:id", async (req, res) => {
+    const userId = req.params.id;
+
+    const r = await query("SELECT * FROM users WHERE id=$1", [userId]);
+    if (!r.rows[0]) return res.status(404).json({ error: "User nicht gefunden" });
+
+    const user = r.rows[0];
+
+    let character = null;
+
+    if (user.character_id) {
+        const c = await query("SELECT * FROM characters WHERE id=$1", [user.character_id]);
+        character = c.rows[0] || null;
+    }
+
+    res.json({
+        id: user.id,
+        name: user.name,
+        xp: user.xp,
+        highest_xp: user.highest_xp,
+        class_id: user.class_id,
+        traits: user.traits || [],
+        items: user.items || [],
+        character
+    });
+});
+
+// ----------------------------------------------------
+// STUDENT: Uploads anzeigen
+// ----------------------------------------------------
+app.get("/api/student/uploads/:id", async (req, res) => {
+    const id = req.params.id;
+
+    const r = await query(
+        "SELECT * FROM student_uploads WHERE student_id=$1 ORDER BY id DESC",
+        [id]
+    );
+
+    res.json(r.rows);
+});
+
+// =====================================================================
+// =========================  ADMIN-BEREICH  ============================
+// =====================================================================
+// (UNVERÄNDERT GELASSEN)
 // ----------------------------------------------------
 // KLASSEN
 // ----------------------------------------------------
@@ -264,7 +376,7 @@ app.delete("/api/admin/missions/:id", async (req, res) => {
 });
 
 // ----------------------------------------------------
-// BONUSKARTEN (mit R2 Upload)
+// BONUSKARTEN
 // ----------------------------------------------------
 app.get("/api/admin/bonus", async (req, res) => {
     const r = await query("SELECT * FROM bonus_cards ORDER BY id DESC");
@@ -295,7 +407,7 @@ app.delete("/api/admin/bonus/:id", async (req, res) => {
 });
 
 // ----------------------------------------------------
-// CHARAKTERE (mit R2 Upload)
+// CHARAKTERE
 // ----------------------------------------------------
 app.get("/api/admin/characters", async (req, res) => {
     const r = await query("SELECT * FROM characters ORDER BY id DESC");
@@ -326,7 +438,7 @@ app.delete("/api/admin/characters/:id", async (req, res) => {
 });
 
 // ----------------------------------------------------
-// STUDENT UPLOADS (mit R2 Upload)
+// STUDENT-UPLOAD-ADMIN
 // ----------------------------------------------------
 app.get("/api/admin/uploads/:student_id", async (req, res) => {
     const r = await query(
@@ -356,118 +468,6 @@ app.post("/api/student/upload", async (req, res) => {
 app.delete("/api/admin/uploads/:id", async (req, res) => {
     await query("DELETE FROM student_uploads WHERE id=$1", [req.params.id]);
     res.json({ success: true });
-});
-// ==============================================
-// STUDENT: First-Login (Charakter + Traits + Items)
-// ==============================================
-const TRAITS = [
-    "Neugierig", "Ausdauernd", "Kreativ", "Hilfsbereit", "Strukturiert",
-    "Risikofreudig", "Ruhig", "Zielstrebig", "Analytisch", "Teamorientiert",
-    "Selbstkritisch", "Optimistisch", "Aufmerksam", "Pragmatisch", "Mutig",
-    "Sorgfältig", "Logisch denkend", "Erfinderisch", "Geduldig", "Inspirierend"
-];
-
-const ITEMS = [
-    "Zirkel der Präzision", "Rechenamulett", "Logikstein", "Notizrolle der Klarheit",
-    "Schutzbrille der Konzentration", "Zauberstift des Beweises",
-    "Kompass der Richtung", "Rucksack der Ideen", "Lineal des Gleichgewichts",
-    "Lampe des Einfalls", "Formelbuch des Wissens", "Tasche der Zufälle",
-    "Würfel der Wahrscheinlichkeit", "Chronometer der Geduld",
-    "Mantel der Logik", "Rechenbrett des Ausgleichs", "Trank der Übersicht",
-    "Kristall des Beweises", "Talisman der Motivation",
-    "Zauberstab des Verständnisses"
-];
-
-function pickThree(arr) {
-    return [...arr].sort(() => Math.random() - 0.5).slice(0, 3);
-}
-
-// Sicherstellen, dass Spalten existieren
-await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS traits JSONB;`);
-await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS items JSONB;`);
-
-
-// ==============================================
-// STUDENT ENDPOINT: FIRST LOGIN
-// ==============================================
-app.post("/api/student/first-login", async (req, res) => {
-    const { user_id } = req.body;
-
-    const r = await query("SELECT * FROM users WHERE id=$1", [user_id]);
-    if (!r.rows[0]) return res.status(400).json({ error: "User existiert nicht" });
-
-    const user = r.rows[0];
-
-    // Falls Traits + Items + Charakter schon existieren → Überspringen
-    if (user.character_id && user.traits && user.items) {
-        return res.json({ skip: true });
-    }
-
-    // Zufälligen Charakter ziehen
-    const charRes = await query("SELECT id FROM characters ORDER BY RANDOM() LIMIT 1");
-    const randomCharId = charRes.rows[0]?.id || null;
-
-    // Zufällige Traits / Items
-    const traits = pickThree(TRAITS);
-    const items = pickThree(ITEMS);
-
-    // Speichern
-    await query(
-        "UPDATE users SET character_id=$1, traits=$2, items=$3 WHERE id=$4",
-        [randomCharId, JSON.stringify(traits), JSON.stringify(items), user_id]
-    );
-
-    res.json({
-        character_id: randomCharId,
-        traits,
-        items
-    });
-});
-
-
-// ==============================================
-// STUDENT ENDPOINT: EIGENE DATEN
-// ==============================================
-app.get("/api/student/me/:id", async (req, res) => {
-    const user_id = req.params.id;
-
-    const r = await query("SELECT * FROM users WHERE id=$1", [user_id]);
-    if (!r.rows[0]) return res.status(404).json({ error: "User nicht gefunden" });
-
-    const user = r.rows[0];
-
-    // Charakter laden
-    let character = null;
-    if (user.character_id) {
-        const c = await query("SELECT * FROM characters WHERE id=$1", [user.character_id]);
-        character = c.rows[0] || null;
-    }
-
-    res.json({
-        id: user.id,
-        name: user.name,
-        xp: user.xp,
-        highest_xp: user.highest_xp,
-        class_id: user.class_id,
-        traits: user.traits || [],
-        items: user.items || [],
-        character
-    });
-});
-
-
-// ==============================================
-// STUDENT ENDPOINT: EIGENE UPLOADS
-// ==============================================
-app.get("/api/student/uploads/:id", async (req, res) => {
-    const id = req.params.id;
-
-    const r = await query(
-        "SELECT * FROM student_uploads WHERE student_id=$1 ORDER BY id DESC",
-        [id]
-    );
-
-    res.json(r.rows);
 });
 
 // ----------------------------------------------------
