@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="de">
 <body style="background:#0f0f14; color:white; font-family:Arial; padding:2rem">
+
 <h2>Login</h2>
 
 <input id="name" placeholder="Name" style="display:block; margin-bottom:1rem;">
@@ -21,7 +22,6 @@ async function login() {
   const data = await r.json();
   if (!r.ok) return alert(data.error);
 
-  // LOGIN SPEICHERN
   localStorage.setItem("id", data.id);
   localStorage.setItem("name", data.name);
   localStorage.setItem("role", data.role);

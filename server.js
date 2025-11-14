@@ -1,5 +1,5 @@
 // ==========================================
-// server.js – Temple of Logic (FINAL FIX)
+// server.js – Temple of Logic (FINAL)
 // ==========================================
 
 import express from "express";
@@ -41,9 +41,6 @@ if (!fs.existsSync(uploadFolder)) fs.mkdirSync(uploadFolder, { recursive: true }
 async function migrate() {
   console.log("Starte Migration…");
 
-  // ======================
-  // KLASSEN
-  // ======================
   await query(`
     CREATE TABLE IF NOT EXISTS classes (
       id SERIAL PRIMARY KEY,
@@ -51,9 +48,6 @@ async function migrate() {
     );
   `);
 
-  // ======================
-  // USER
-  // ======================
   await query(`
     CREATE TABLE IF NOT EXISTS users (
       id SERIAL PRIMARY KEY,
@@ -67,21 +61,9 @@ async function migrate() {
     );
   `);
 
-  // ======================
-  // MISSIONS – SAUBER DROPPEN + NEU ERSTELLEN
-  // ======================
+  await query(`DROP TABLE IF EXISTS student_mission_uploads CASCADE;`);
+  await query(`DROP TABLE IF EXISTS missions CASCADE;`);
 
-  // Abhängige Tabellen droppen
-  await query(`
-    DROP TABLE IF EXISTS student_mission_uploads CASCADE;
-  `);
-
-  // Missions-Tabelle droppen (jetzt safe)
-  await query(`
-    DROP TABLE IF EXISTS missions CASCADE;
-  `);
-
-  // Missions-Tabelle neu erstellen
   await query(`
     CREATE TABLE missions (
       id SERIAL PRIMARY KEY,
@@ -93,7 +75,6 @@ async function migrate() {
     );
   `);
 
-  // Upload-Tabelle wieder erstellen
   await query(`
     CREATE TABLE student_mission_uploads (
       id SERIAL PRIMARY KEY,
@@ -104,9 +85,6 @@ async function migrate() {
     );
   `);
 
-  // ======================
-  // DEFAULT ADMIN
-  // ======================
   await query(`
     INSERT INTO users (name, password, role)
     VALUES ('admin', 'admin', 'admin')
@@ -169,6 +147,62 @@ app.delete("/api/admin/classes/:id", async (req, res) => {
 });
 
 // ----------------------------------------------------
+// SCHÜLER
+// ----------------------------------------------------
+app.get("/api/admin/students/:classId", async (req, res) => {
+  const r = await query(
+    "SELECT id, name, xp FROM users WHERE role='student' AND class_id=$1 ORDER BY name ASC",
+    [req.params.classId]
+  );
+  res.json(r.rows);
+});
+
+app.post("/api/admin/students", async (req, res) => {
+  const { name, password, class_id } = req.body;
+  try {
+    await query(
+      "INSERT INTO users (name, password, role, class_id) VALUES ($1,$2,'student',$3)",
+      [name, password, class_id]
+    );
+    res.json({ success: true });
+  } catch {
+    res.status(400).json({ error: "Schüler existiert bereits" });
+  }
+});
+
+app.delete("/api/admin/students/:id", async (req, res) => {
+  await query("DELETE FROM users WHERE id=$1 AND role='student'", [
+    req.params.id
+  ]);
+  res.json({ success: true });
+});
+
+// ----------------------------------------------------
+// XP
+// ----------------------------------------------------
+app.post("/api/admin/xp/student", async (req, res) => {
+  const { student_id, amount } = req.body;
+
+  await query(
+    "UPDATE users SET xp = xp + $1, highest_xp = GREATEST(highest_xp, xp + $1) WHERE id=$2",
+    [amount, student_id]
+  );
+
+  res.json({ success: true });
+});
+
+app.post("/api/admin/xp/class", async (req, res) => {
+  const { class_id, amount } = req.body;
+
+  await query(
+    "UPDATE users SET xp = xp + $1, highest_xp = GREATEST(highest_xp, xp + $1) WHERE class_id=$2 AND role='student'",
+    [amount, class_id]
+  );
+
+  res.json({ success: true });
+});
+
+// ----------------------------------------------------
 // MISSIONEN
 // ----------------------------------------------------
 app.get("/api/admin/missions", async (req, res) => {
@@ -178,10 +212,6 @@ app.get("/api/admin/missions", async (req, res) => {
 
 app.post("/api/admin/missions", async (req, res) => {
   const { title, xp_reward, requires_upload } = req.body;
-
-  if (!title || !xp_reward) {
-    return res.status(400).json({ error: "Titel und XP nötig" });
-  }
 
   let imageUrl = null;
 
@@ -212,9 +242,7 @@ app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "login.html"));
 });
 
-// ----------------------------------------------------
-// START
-// ----------------------------------------------------
+// START ----------------------------------------------
 migrate().then(() => {
   const PORT = process.env.PORT || 3000;
   app.listen(PORT, () => console.log("Server läuft auf Port", PORT));
