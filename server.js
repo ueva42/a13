@@ -1,5 +1,5 @@
 // ==========================================
-// server.js – Temple of Logic (FINAL + LEVELS)
+// server.js – Temple of Logic (FINAL VERSION)
 // ==========================================
 
 import express from "express";
@@ -34,8 +34,8 @@ export async function query(q, params) {
 // MIGRATION
 // ----------------------------------------------------
 async function migrate() {
-    console.log("Starte Migration…");
 
+    // Tabellen anlegen
     await query(`
         CREATE TABLE IF NOT EXISTS classes (
             id SERIAL PRIMARY KEY,
@@ -78,15 +78,6 @@ async function migrate() {
     `);
 
     await query(`
-        CREATE TABLE IF NOT EXISTS student_uploads (
-            id SERIAL PRIMARY KEY,
-            student_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-            file_url TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT NOW()
-        );
-    `);
-
-    await query(`
         CREATE TABLE IF NOT EXISTS bonus_cards (
             id SERIAL PRIMARY KEY,
             title TEXT NOT NULL,
@@ -96,34 +87,41 @@ async function migrate() {
         );
     `);
 
-    // ⭐ NEW: LEVELS
     await query(`
-        CREATE TABLE IF NOT EXISTS levels (
+        CREATE TABLE IF NOT EXISTS student_uploads (
             id SERIAL PRIMARY KEY,
-            name TEXT NOT NULL,
-            xp_required INTEGER NOT NULL
+            student_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+            file_url TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT NOW()
         );
     `);
 
-    console.log("Migration abgeschlossen.");
+    // Default Admin nur wenn nicht existiert
+    await query(`
+        INSERT INTO users (name, password, role)
+        SELECT 'steffen', 'admin123', 'admin'
+        WHERE NOT EXISTS (SELECT 1 FROM users WHERE name='steffen');
+    `);
 }
 
 // ----------------------------------------------------
-// EXPRESS SETUP
+// EXPRESS EINRICHTEN
 // ----------------------------------------------------
 const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(fileUpload());
 
-// Upload-Ordner
+// STATIC FILES
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const uploadFolder = path.join(__dirname, "public", "uploads");
-if (!fs.existsSync(uploadFolder)) fs.mkdirSync(uploadFolder, { recursive: true });
-
 app.use(express.static(path.join(__dirname, "public")));
+app.use("/uploads", express.static(path.join(__dirname, "public", "uploads")));
+
+if (!fs.existsSync(path.join(__dirname, "public", "uploads"))) {
+    fs.mkdirSync(path.join(__dirname, "public", "uploads"), { recursive: true });
+}
 
 // ----------------------------------------------------
 // LOGIN
@@ -163,7 +161,7 @@ app.delete("/api/admin/classes/:id", async (req, res) => {
 });
 
 // ----------------------------------------------------
-// STUDENTS
+// SCHÜLER
 // ----------------------------------------------------
 app.get("/api/admin/students/:class_id", async (req, res) => {
     const r = await query(
@@ -175,10 +173,12 @@ app.get("/api/admin/students/:class_id", async (req, res) => {
 
 app.post("/api/admin/students", async (req, res) => {
     const { name, password, class_id } = req.body;
+
     await query(
-        "INSERT INTO users (name, password, role, class_id) VALUES ($1,$2,'student',$3)",
+        "INSERT INTO users (name, password, role, class_id, xp, highest_xp) VALUES ($1,$2,'student',$3,0,0)",
         [name, password, class_id]
     );
+
     res.json({ success: true });
 });
 
@@ -212,6 +212,7 @@ app.post("/api/admin/xp/class", async (req, res) => {
     res.json({ success: true });
 });
 
+// Mission → Schüler
 app.post("/api/admin/xp/mission-students", async (req, res) => {
     const { student_ids, mission_id } = req.body;
 
@@ -220,7 +221,7 @@ app.post("/api/admin/xp/mission-students", async (req, res) => {
 
     for (let id of student_ids) {
         await query(
-            "UPDATE users SET xp=xp+$1, highest_xp=GREATEST(highest_xp, xp+$1) WHERE id=$2",
+            "UPDATE users SET xp = xp + $1, highest_xp = GREATEST(highest_xp, xp + $1) WHERE id=$2",
             [xp, id]
         );
     }
@@ -228,6 +229,7 @@ app.post("/api/admin/xp/mission-students", async (req, res) => {
     res.json({ success: true });
 });
 
+// Mission → Klasse
 app.post("/api/admin/xp/mission-class", async (req, res) => {
     const { class_id, mission_id } = req.body;
 
@@ -235,7 +237,7 @@ app.post("/api/admin/xp/mission-class", async (req, res) => {
     const xp = r.rows[0].xp_reward;
 
     await query(
-        "UPDATE users SET xp=xp+$1, highest_xp=GREATEST(highest_xp, xp+$1) WHERE class_id=$2",
+        "UPDATE users SET xp = xp + $1, highest_xp = GREATEST(highest_xp, xp + $1) WHERE class_id=$2",
         [xp, class_id]
     );
 
@@ -243,7 +245,7 @@ app.post("/api/admin/xp/mission-class", async (req, res) => {
 });
 
 // ----------------------------------------------------
-// MISSIONS
+// MISSIONEN
 // ----------------------------------------------------
 app.get("/api/admin/missions", async (req, res) => {
     const r = await query("SELECT * FROM missions ORDER BY id DESC");
@@ -254,10 +256,11 @@ app.post("/api/admin/missions", async (req, res) => {
     const { title, xp_reward } = req.body;
 
     let imageUrl = null;
+
     if (req.files?.image) {
         const img = req.files.image;
         const filename = "mission_" + Date.now() + "_" + img.name;
-        await img.mv(path.join(uploadFolder, filename));
+        await img.mv(path.join(__dirname, "public", "uploads", filename));
         imageUrl = "/uploads/" + filename;
     }
 
@@ -275,23 +278,7 @@ app.delete("/api/admin/missions/:id", async (req, res) => {
 });
 
 // ----------------------------------------------------
-// UPLOADS
-// ----------------------------------------------------
-app.get("/api/admin/uploads/:student_id", async (req, res) => {
-    const r = await query(
-        "SELECT * FROM student_uploads WHERE student_id=$1 ORDER BY id DESC",
-        [req.params.student_id]
-    );
-    res.json(r.rows);
-});
-
-app.delete("/api/admin/uploads/:id", async (req, res) => {
-    await query("DELETE FROM student_uploads WHERE id=$1", [req.params.id]);
-    res.json({ success: true });
-});
-
-// ----------------------------------------------------
-// BONUS CARDS
+// BONUSKARTEN
 // ----------------------------------------------------
 app.get("/api/admin/bonus", async (req, res) => {
     const r = await query("SELECT * FROM bonus_cards ORDER BY id DESC");
@@ -302,10 +289,11 @@ app.post("/api/admin/bonus", async (req, res) => {
     const { title, xp_cost } = req.body;
 
     let imageUrl = null;
+
     if (req.files?.image) {
         const img = req.files.image;
         const filename = "bonus_" + Date.now() + "_" + img.name;
-        await img.mv(path.join(uploadFolder, filename));
+        await img.mv(path.join(__dirname, "public", "uploads", filename));
         imageUrl = "/uploads/" + filename;
     }
 
@@ -334,10 +322,11 @@ app.post("/api/admin/characters", async (req, res) => {
     const { name } = req.body;
 
     let imageUrl = null;
+
     if (req.files?.image) {
         const img = req.files.image;
         const filename = "character_" + Date.now() + "_" + img.name;
-        await img.mv(path.join(uploadFolder, filename));
+        await img.mv(path.join(__dirname, "public", "uploads", filename));
         imageUrl = "/uploads/" + filename;
     }
 
@@ -355,31 +344,7 @@ app.delete("/api/admin/characters/:id", async (req, res) => {
 });
 
 // ----------------------------------------------------
-// ⭐ LEVELS ENDPOINTS
-// ----------------------------------------------------
-app.get("/api/admin/levels", async (req, res) => {
-    const r = await query("SELECT * FROM levels ORDER BY xp_required ASC");
-    res.json(r.rows);
-});
-
-app.post("/api/admin/levels", async (req, res) => {
-    const { name, xp_required } = req.body;
-
-    await query(
-        "INSERT INTO levels (name, xp_required) VALUES ($1,$2)",
-        [name, xp_required]
-    );
-
-    res.json({ success: true });
-});
-
-app.delete("/api/admin/levels/:id", async (req, res) => {
-    await query("DELETE FROM levels WHERE id=$1", [req.params.id]);
-    res.json({ success: true });
-});
-
-// ----------------------------------------------------
-// START SERVER
+// STARTUP
 // ----------------------------------------------------
 const PORT = process.env.PORT || 3000;
 
