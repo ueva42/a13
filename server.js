@@ -357,6 +357,118 @@ app.delete("/api/admin/uploads/:id", async (req, res) => {
     await query("DELETE FROM student_uploads WHERE id=$1", [req.params.id]);
     res.json({ success: true });
 });
+// ==============================================
+// STUDENT: First-Login (Charakter + Traits + Items)
+// ==============================================
+const TRAITS = [
+    "Neugierig", "Ausdauernd", "Kreativ", "Hilfsbereit", "Strukturiert",
+    "Risikofreudig", "Ruhig", "Zielstrebig", "Analytisch", "Teamorientiert",
+    "Selbstkritisch", "Optimistisch", "Aufmerksam", "Pragmatisch", "Mutig",
+    "Sorgfältig", "Logisch denkend", "Erfinderisch", "Geduldig", "Inspirierend"
+];
+
+const ITEMS = [
+    "Zirkel der Präzision", "Rechenamulett", "Logikstein", "Notizrolle der Klarheit",
+    "Schutzbrille der Konzentration", "Zauberstift des Beweises",
+    "Kompass der Richtung", "Rucksack der Ideen", "Lineal des Gleichgewichts",
+    "Lampe des Einfalls", "Formelbuch des Wissens", "Tasche der Zufälle",
+    "Würfel der Wahrscheinlichkeit", "Chronometer der Geduld",
+    "Mantel der Logik", "Rechenbrett des Ausgleichs", "Trank der Übersicht",
+    "Kristall des Beweises", "Talisman der Motivation",
+    "Zauberstab des Verständnisses"
+];
+
+function pickThree(arr) {
+    return [...arr].sort(() => Math.random() - 0.5).slice(0, 3);
+}
+
+// Sicherstellen, dass Spalten existieren
+await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS traits JSONB;`);
+await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS items JSONB;`);
+
+
+// ==============================================
+// STUDENT ENDPOINT: FIRST LOGIN
+// ==============================================
+app.post("/api/student/first-login", async (req, res) => {
+    const { user_id } = req.body;
+
+    const r = await query("SELECT * FROM users WHERE id=$1", [user_id]);
+    if (!r.rows[0]) return res.status(400).json({ error: "User existiert nicht" });
+
+    const user = r.rows[0];
+
+    // Falls Traits + Items + Charakter schon existieren → Überspringen
+    if (user.character_id && user.traits && user.items) {
+        return res.json({ skip: true });
+    }
+
+    // Zufälligen Charakter ziehen
+    const charRes = await query("SELECT id FROM characters ORDER BY RANDOM() LIMIT 1");
+    const randomCharId = charRes.rows[0]?.id || null;
+
+    // Zufällige Traits / Items
+    const traits = pickThree(TRAITS);
+    const items = pickThree(ITEMS);
+
+    // Speichern
+    await query(
+        "UPDATE users SET character_id=$1, traits=$2, items=$3 WHERE id=$4",
+        [randomCharId, JSON.stringify(traits), JSON.stringify(items), user_id]
+    );
+
+    res.json({
+        character_id: randomCharId,
+        traits,
+        items
+    });
+});
+
+
+// ==============================================
+// STUDENT ENDPOINT: EIGENE DATEN
+// ==============================================
+app.get("/api/student/me/:id", async (req, res) => {
+    const user_id = req.params.id;
+
+    const r = await query("SELECT * FROM users WHERE id=$1", [user_id]);
+    if (!r.rows[0]) return res.status(404).json({ error: "User nicht gefunden" });
+
+    const user = r.rows[0];
+
+    // Charakter laden
+    let character = null;
+    if (user.character_id) {
+        const c = await query("SELECT * FROM characters WHERE id=$1", [user.character_id]);
+        character = c.rows[0] || null;
+    }
+
+    res.json({
+        id: user.id,
+        name: user.name,
+        xp: user.xp,
+        highest_xp: user.highest_xp,
+        class_id: user.class_id,
+        traits: user.traits || [],
+        items: user.items || [],
+        character
+    });
+});
+
+
+// ==============================================
+// STUDENT ENDPOINT: EIGENE UPLOADS
+// ==============================================
+app.get("/api/student/uploads/:id", async (req, res) => {
+    const id = req.params.id;
+
+    const r = await query(
+        "SELECT * FROM student_uploads WHERE student_id=$1 ORDER BY id DESC",
+        [id]
+    );
+
+    res.json(r.rows);
+});
 
 // ----------------------------------------------------
 // START
