@@ -484,6 +484,106 @@ app.delete("/api/admin/uploads/:id", async (req, res) => {
     await query("DELETE FROM student_uploads WHERE id=$1", [req.params.id]);
     res.json({ success: true });
 });
+// =====================================================
+// LEVEL – Tabelle + Admin-Endpunkte + Auto-Level-Logic
+// =====================================================
+
+// Migration erweitern
+async function migrateLevels() {
+    await query(`
+        CREATE TABLE IF NOT EXISTS levels (
+            id SERIAL PRIMARY KEY,
+            title TEXT NOT NULL,
+            required_xp INTEGER NOT NULL
+        );
+    `);
+
+    // Standard-Level falls Tabelle leer ist
+    const r = await query("SELECT COUNT(*) FROM levels");
+    if (Number(r.rows[0].count) === 0) {
+        await query(`
+            INSERT INTO levels (title, required_xp) VALUES
+            ('Novize', 0),
+            ('Lehrling', 50),
+            ('Entdecker', 150),
+            ('Tüftler', 300),
+            ('Meister', 600);
+        `);
+        console.log("Standard-Level angelegt");
+    }
+}
+
+// Helfer: berechne aktuelles Level eines Users
+async function getLevelForXp(xp) {
+    const r = await query(
+        "SELECT * FROM levels ORDER BY required_xp ASC"
+    );
+
+    let current = r.rows[0];
+
+    for (const lvl of r.rows) {
+        if (xp >= lvl.required_xp) current = lvl;
+        else break;
+    }
+
+    return current;
+}
+
+// Student-API: Level + nächstes Level
+app.get("/api/student/level/:id", async (req, res) => {
+    const id = req.params.id;
+
+    const r = await query("SELECT xp FROM users WHERE id=$1", [id]);
+    if (!r.rows[0]) return res.status(404).json({ error: "User nicht gefunden" });
+
+    const xp = r.rows[0].xp;
+    const levels = await query("SELECT * FROM levels ORDER BY required_xp ASC");
+
+    const current = await getLevelForXp(xp);
+
+    // nächstes Level suchen
+    let next = null;
+    for (const lvl of levels.rows) {
+        if (lvl.required_xp > xp) {
+            next = lvl;
+            break;
+        }
+    }
+
+    res.json({
+        xp,
+        level: current,
+        next_level: next
+    });
+});
+
+// =====================================================
+// ADMIN: LEVEL
+// =====================================================
+
+// Alle Level holen
+app.get("/api/admin/levels", async (req, res) => {
+    const r = await query("SELECT * FROM levels ORDER BY required_xp ASC");
+    res.json(r.rows);
+});
+
+// Level anlegen
+app.post("/api/admin/levels", async (req, res) => {
+    const { title, required_xp } = req.body;
+
+    await query(
+        "INSERT INTO levels (title, required_xp) VALUES ($1,$2)",
+        [title, Number(required_xp)]
+    );
+
+    res.json({ success: true });
+});
+
+// Level löschen
+app.delete("/api/admin/levels/:id", async (req, res) => {
+    await query("DELETE FROM levels WHERE id=$1", [req.params.id]);
+    res.json({ success: true });
+});
 
 // ----------------------------------------------------
 // START
