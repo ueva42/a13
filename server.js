@@ -1,5 +1,5 @@
 // ==========================================
-// server.js – Temple of Logic (FINAL STABLE)
+// server.js – Temple of Logic (stabile Version mit R2 + Level)
 // ==========================================
 
 import express from "express";
@@ -9,8 +9,7 @@ import dotenv from "dotenv";
 import pg from "pg";
 import path from "path";
 import { fileURLToPath } from "url";
-
-import { uploadToR2 } from "./r2.js";
+import { uploadToR2, r2Configured } from "./r2.js";
 
 dotenv.config();
 
@@ -32,24 +31,21 @@ export async function query(q, params) {
 }
 
 // ----------------------------------------------------
-// AUTO-FIX für USERS (char_id, traits, items)
+// AUTO-FIX FEHLENDE SPALTEN
 // ----------------------------------------------------
 async function autoFixColumns() {
   console.log("Prüfe fehlende Spalten…");
 
   await query(`
-    ALTER TABLE users
-    ADD COLUMN IF NOT EXISTS character_id INTEGER REFERENCES characters(id);
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS character_id INTEGER REFERENCES characters(id);
   `);
 
   await query(`
-    ALTER TABLE users
-    ADD COLUMN IF NOT EXISTS traits JSONB;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS traits JSONB;
   `);
 
   await query(`
-    ALTER TABLE users
-    ADD COLUMN IF NOT EXISTS items JSONB;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS items JSONB;
   `);
 
   console.log("Auto-Fix abgeschlossen.");
@@ -59,20 +55,49 @@ async function autoFixColumns() {
 // TRAITS + ITEMS
 // ----------------------------------------------------
 const TRAITS = [
-  "Neugierig","Ausdauernd","Kreativ","Hilfsbereit","Strukturiert",
-  "Risikofreudig","Ruhig","Zielstrebig","Analytisch","Teamorientiert",
-  "Selbstkritisch","Optimistisch","Aufmerksam","Pragmatisch","Mutig",
-  "Sorgfältig","Logisch denkend","Erfinderisch","Geduldig","Inspirierend"
+  "Neugierig",
+  "Ausdauernd",
+  "Kreativ",
+  "Hilfsbereit",
+  "Strukturiert",
+  "Risikofreudig",
+  "Ruhig",
+  "Zielstrebig",
+  "Analytisch",
+  "Teamorientiert",
+  "Selbstkritisch",
+  "Optimistisch",
+  "Aufmerksam",
+  "Pragmatisch",
+  "Mutig",
+  "Sorgfältig",
+  "Logisch denkend",
+  "Erfinderisch",
+  "Geduldig",
+  "Inspirierend",
 ];
 
 const ITEMS = [
-  "Zirkel der Präzision","Rechenamulett","Logikstein","Notizrolle der Klarheit",
-  "Schutzbrille der Konzentration","Zauberstift des Beweises","Kompass der Richtung",
-  "Rucksack der Ideen","Lineal des Gleichgewichts","Lampe des Einfalls",
-  "Formelbuch des Wissens","Tasche der Zufälle","Würfel der Wahrscheinlichkeit",
-  "Chronometer der Geduld","Mantel der Logik","Rechenbrett des Ausgleichs",
-  "Trank der Übersicht","Kristall des Beweises","Talisman der Motivation",
-  "Zauberstab des Verständnisses"
+  "Zirkel der Präzision",
+  "Rechenamulett",
+  "Logikstein",
+  "Notizrolle der Klarheit",
+  "Schutzbrille der Konzentration",
+  "Zauberstift des Beweises",
+  "Kompass der Richtung",
+  "Rucksack der Ideen",
+  "Lineal des Gleichgewichts",
+  "Lampe des Einfalls",
+  "Formelbuch des Wissens",
+  "Tasche der Zufälle",
+  "Würfel der Wahrscheinlichkeit",
+  "Chronometer der Geduld",
+  "Mantel der Logik",
+  "Rechenbrett des Ausgleichs",
+  "Trank der Übersicht",
+  "Kristall des Beweises",
+  "Talisman der Motivation",
+  "Zauberstab des Verständnisses",
 ];
 
 function pickThree(arr) {
@@ -85,7 +110,6 @@ function pickThree(arr) {
 async function migrate() {
   console.log("Starte Migration…");
 
-  // Klassen
   await query(`
     CREATE TABLE IF NOT EXISTS classes (
       id SERIAL PRIMARY KEY,
@@ -93,7 +117,6 @@ async function migrate() {
     );
   `);
 
-  // Charaktere
   await query(`
     CREATE TABLE IF NOT EXISTS characters (
       id SERIAL PRIMARY KEY,
@@ -103,7 +126,6 @@ async function migrate() {
     );
   `);
 
-  // Users
   await query(`
     CREATE TABLE IF NOT EXISTS users (
       id SERIAL PRIMARY KEY,
@@ -120,7 +142,6 @@ async function migrate() {
     );
   `);
 
-  // Missionen
   await query(`
     CREATE TABLE IF NOT EXISTS missions (
       id SERIAL PRIMARY KEY,
@@ -132,7 +153,6 @@ async function migrate() {
     );
   `);
 
-  // Schüler-Uploads
   await query(`
     CREATE TABLE IF NOT EXISTS student_uploads (
       id SERIAL PRIMARY KEY,
@@ -142,7 +162,6 @@ async function migrate() {
     );
   `);
 
-  // Bonuskarten
   await query(`
     CREATE TABLE IF NOT EXISTS bonus_cards (
       id SERIAL PRIMARY KEY,
@@ -153,11 +172,12 @@ async function migrate() {
     );
   `);
 
-  // Level – wir legen nur an, falls noch nicht da
+  // Levels: XP >= 0 erlaubt, xp_required NOT NULL
   await query(`
     CREATE TABLE IF NOT EXISTS levels (
       id SERIAL PRIMARY KEY,
       name TEXT NOT NULL,
+      description TEXT,
       xp_required INTEGER NOT NULL,
       created_at TIMESTAMP DEFAULT NOW()
     );
@@ -186,7 +206,8 @@ app.post("/api/auth/login", async (req, res) => {
   const { name, password } = req.body;
 
   const r = await query("SELECT * FROM users WHERE name=$1", [name]);
-  if (!r.rows[0]) return res.status(400).json({ error: "Benutzer existiert nicht" });
+  if (!r.rows[0])
+    return res.status(400).json({ error: "Benutzer existiert nicht" });
 
   if (r.rows[0].password !== password)
     return res.status(400).json({ error: "Falsches Passwort" });
@@ -202,19 +223,23 @@ app.post("/api/auth/login", async (req, res) => {
 // =======================  STUDENT-BEREICH  ===========================
 // =====================================================================
 
-// First Login: Charakter + Traits + Items
+// FIRST LOGIN – Charakter + Traits + Items generieren
 app.post("/api/student/first-login", async (req, res) => {
   const { user_id } = req.body;
 
   const r = await query("SELECT * FROM users WHERE id=$1", [user_id]);
   if (!r.rows[0]) return res.status(400).json({ error: "User existiert nicht" });
+
   const user = r.rows[0];
 
+  // Überspringen, falls schon vorhanden
   if (user.character_id && user.traits && user.items) {
     return res.json({ skip: true });
   }
 
-  const charRes = await query("SELECT id FROM characters ORDER BY RANDOM() LIMIT 1");
+  const charRes = await query(
+    "SELECT id FROM characters ORDER BY RANDOM() LIMIT 1"
+  );
   const randomCharId = charRes.rows[0]?.id || null;
 
   const traits = pickThree(TRAITS);
@@ -228,7 +253,7 @@ app.post("/api/student/first-login", async (req, res) => {
   res.json({ character_id: randomCharId, traits, items });
 });
 
-// Student: /me
+// STUDENT: /me (alle Daten)
 app.get("/api/student/me/:id", async (req, res) => {
   const userId = req.params.id;
 
@@ -239,16 +264,11 @@ app.get("/api/student/me/:id", async (req, res) => {
 
   let character = null;
   if (user.character_id) {
-    const c = await query("SELECT * FROM characters WHERE id=$1", [user.character_id]);
+    const c = await query("SELECT * FROM characters WHERE id=$1", [
+      user.character_id,
+    ]);
     character = c.rows[0] || null;
   }
-
-  // Level anhand XP ermitteln (höchstes Level mit xp_required <= xp)
-  const lvlRes = await query(
-    "SELECT id, name, xp_required FROM levels WHERE xp_required <= $1 ORDER BY xp_required DESC LIMIT 1",
-    [user.xp]
-  );
-  const level = lvlRes.rows[0] || null;
 
   res.json({
     id: user.id,
@@ -259,11 +279,10 @@ app.get("/api/student/me/:id", async (req, res) => {
     traits: user.traits || [],
     items: user.items || [],
     character,
-    level,
   });
 });
 
-// Student: eigene Uploads
+// STUDENT: Upload-Liste
 app.get("/api/student/uploads/:id", async (req, res) => {
   const r = await query(
     "SELECT * FROM student_uploads WHERE student_id=$1 ORDER BY id DESC",
@@ -272,27 +291,20 @@ app.get("/api/student/uploads/:id", async (req, res) => {
   res.json(r.rows);
 });
 
-// Student: Bild hochladen (z. B. Missionsbeweis)
+// STUDENT: Upload hochladen
 app.post("/api/student/upload", async (req, res) => {
   const { student_id } = req.body;
 
-  if (!student_id) return res.status(400).json({ error: "student_id fehlt" });
-  if (!req.files || !req.files.file)
-    return res.status(400).json({ error: "Keine Datei hochgeladen" });
+  if (!req.files?.file) return res.status(400).json({ error: "Keine Datei" });
 
   const file = req.files.file;
   const filename = "upload_" + Date.now() + "_" + file.name;
 
-  const url = await uploadToR2(file, filename); // kann null sein
-
-  if (!url) {
-    // Kein Crash, aber wir speichern dann auch nichts
-    return res.status(500).json({ error: "Upload fehlgeschlagen (R2)" });
-  }
+  const url = await uploadToR2(file, filename);
 
   await query(
     "INSERT INTO student_uploads (student_id, file_url) VALUES ($1,$2)",
-    [student_id, url]
+    [student_id, url || ""]
   );
 
   res.json({ success: true, file_url: url });
@@ -311,11 +323,7 @@ app.get("/api/admin/classes", async (req, res) => {
 });
 
 app.post("/api/admin/classes", async (req, res) => {
-  const { name } = req.body;
-  if (!name || !name.trim()) {
-    return res.status(400).json({ error: "Name darf nicht leer sein" });
-  }
-  await query("INSERT INTO classes (name) VALUES ($1)", [name.trim()]);
+  await query("INSERT INTO classes (name) VALUES ($1)", [req.body.name]);
   res.json({ success: true });
 });
 
@@ -337,9 +345,6 @@ app.get("/api/admin/students/:class_id", async (req, res) => {
 
 app.post("/api/admin/students", async (req, res) => {
   const { name, password, class_id } = req.body;
-  if (!name || !password || !class_id) {
-    return res.status(400).json({ error: "Name, Passwort oder Klasse fehlt" });
-  }
   await query(
     "INSERT INTO users (name, password, role, class_id) VALUES ($1,$2,'student',$3)",
     [name, password, class_id]
@@ -357,14 +362,10 @@ app.delete("/api/admin/students/:id", async (req, res) => {
 // ----------------------------------------------------
 app.post("/api/admin/xp/student", async (req, res) => {
   const { student_id, amount } = req.body;
-  const xp = Number(amount || 0);
-  if (!student_id || isNaN(xp)) {
-    return res.status(400).json({ error: "Daten unvollständig" });
-  }
 
   await query(
     "UPDATE users SET xp = xp + $1, highest_xp = GREATEST(highest_xp, xp + $1) WHERE id=$2",
-    [xp, student_id]
+    [amount, student_id]
   );
 
   res.json({ success: true });
@@ -372,29 +373,22 @@ app.post("/api/admin/xp/student", async (req, res) => {
 
 app.post("/api/admin/xp/class", async (req, res) => {
   const { class_id, amount } = req.body;
-  const xp = Number(amount || 0);
-  if (!class_id || isNaN(xp)) {
-    return res.status(400).json({ error: "Daten unvollständig" });
-  }
 
   await query(
     "UPDATE users SET xp = xp + $1, highest_xp = GREATEST(highest_xp, xp + $1) WHERE class_id=$2",
-    [xp, class_id]
+    [amount, class_id]
   );
 
   res.json({ success: true });
 });
 
-// Mission → ausgewählte Schüler
+// Mission → Schüler
 app.post("/api/admin/xp/mission-students", async (req, res) => {
   const { student_ids, mission_id } = req.body;
-  if (!student_ids || !student_ids.length || !mission_id) {
-    return res.status(400).json({ error: "Daten unvollständig" });
-  }
 
-  const r = await query("SELECT xp_reward FROM missions WHERE id=$1", [mission_id]);
-  if (!r.rows[0]) return res.status(400).json({ error: "Mission existiert nicht" });
-
+  const r = await query("SELECT xp_reward FROM missions WHERE id=$1", [
+    mission_id,
+  ]);
   const xp = r.rows[0].xp_reward;
 
   for (let id of student_ids) {
@@ -407,16 +401,13 @@ app.post("/api/admin/xp/mission-students", async (req, res) => {
   res.json({ success: true });
 });
 
-// Mission → gesamte Klasse
+// Mission → Klasse
 app.post("/api/admin/xp/mission-class", async (req, res) => {
   const { class_id, mission_id } = req.body;
-  if (!class_id || !mission_id) {
-    return res.status(400).json({ error: "Daten unvollständig" });
-  }
 
-  const r = await query("SELECT xp_reward FROM missions WHERE id=$1", [mission_id]);
-  if (!r.rows[0]) return res.status(400).json({ error: "Mission existiert nicht" });
-
+  const r = await query("SELECT xp_reward FROM missions WHERE id=$1", [
+    mission_id,
+  ]);
   const xp = r.rows[0].xp_reward;
 
   await query(
@@ -428,7 +419,7 @@ app.post("/api/admin/xp/mission-class", async (req, res) => {
 });
 
 // ----------------------------------------------------
-// MISSIONEN (R2, aber ohne Crash wenn Upload failt)
+// MISSIONEN (mit R2 Upload)
 // ----------------------------------------------------
 app.get("/api/admin/missions", async (req, res) => {
   const r = await query("SELECT * FROM missions ORDER BY id DESC");
@@ -436,21 +427,23 @@ app.get("/api/admin/missions", async (req, res) => {
 });
 
 app.post("/api/admin/missions", async (req, res) => {
-  const { title, xp_reward, requires_upload } = req.body;
-  if (!title || xp_reward === undefined) {
-    return res.status(400).json({ error: "Titel oder XP fehlen" });
-  }
+  const { title, xp_reward } = req.body;
 
   let imageUrl = null;
-  if (req.files && req.files.image) {
+  if (req.files?.image) {
     const file = req.files.image;
     const filename = "mission_" + Date.now() + "_" + file.name;
-    imageUrl = await uploadToR2(file, filename); // kann null sein
+    imageUrl = await uploadToR2(file, filename);
   }
 
   await query(
     "INSERT INTO missions (title, xp_reward, image_url, requires_upload) VALUES ($1,$2,$3,$4)",
-    [title, Number(xp_reward), imageUrl, requires_upload === "true"]
+    [
+      title,
+      Number(xp_reward),
+      imageUrl,
+      req.body.requires_upload === "true" || req.body.requires_upload === "on",
+    ]
   );
 
   res.json({ success: true });
@@ -462,7 +455,7 @@ app.delete("/api/admin/missions/:id", async (req, res) => {
 });
 
 // ----------------------------------------------------
-// BONUSKARTEN
+// BONUSKARTEN (mit R2 Upload)
 // ----------------------------------------------------
 app.get("/api/admin/bonus", async (req, res) => {
   const r = await query("SELECT * FROM bonus_cards ORDER BY id DESC");
@@ -471,12 +464,9 @@ app.get("/api/admin/bonus", async (req, res) => {
 
 app.post("/api/admin/bonus", async (req, res) => {
   const { title, xp_cost } = req.body;
-  if (!title || xp_cost === undefined) {
-    return res.status(400).json({ error: "Titel oder XP-Kosten fehlen" });
-  }
 
   let imageUrl = null;
-  if (req.files && req.files.image) {
+  if (req.files?.image) {
     const file = req.files.image;
     const filename = "bonus_" + Date.now() + "_" + file.name;
     imageUrl = await uploadToR2(file, filename);
@@ -496,7 +486,7 @@ app.delete("/api/admin/bonus/:id", async (req, res) => {
 });
 
 // ----------------------------------------------------
-// CHARAKTERE
+// CHARAKTERE (mit R2 Upload)
 // ----------------------------------------------------
 app.get("/api/admin/characters", async (req, res) => {
   const r = await query("SELECT * FROM characters ORDER BY id DESC");
@@ -505,21 +495,18 @@ app.get("/api/admin/characters", async (req, res) => {
 
 app.post("/api/admin/characters", async (req, res) => {
   const { name } = req.body;
-  if (!name || !name.trim()) {
-    return res.status(400).json({ error: "Name fehlt" });
-  }
 
   let imageUrl = null;
-  if (req.files && req.files.image) {
+  if (req.files?.image) {
     const file = req.files.image;
     const filename = "character_" + Date.now() + "_" + file.name;
     imageUrl = await uploadToR2(file, filename);
   }
 
-  await query(
-    "INSERT INTO characters (name, image_url) VALUES ($1,$2)",
-    [name.trim(), imageUrl]
-  );
+  await query("INSERT INTO characters (name, image_url) VALUES ($1,$2)", [
+    name,
+    imageUrl,
+  ]);
 
   res.json({ success: true });
 });
@@ -530,7 +517,43 @@ app.delete("/api/admin/characters/:id", async (req, res) => {
 });
 
 // ----------------------------------------------------
-// STUDENT-UPLOADS – Adminsicht
+// LEVEL (NEU) – XP >= 0 erlaubt
+// ----------------------------------------------------
+app.get("/api/admin/levels", async (req, res) => {
+  const r = await query("SELECT * FROM levels ORDER BY xp_required ASC, id ASC");
+  res.json(r.rows);
+});
+
+app.post("/api/admin/levels", async (req, res) => {
+  const { name, xp_required, description } = req.body;
+
+  if (!name || name.trim() === "") {
+    return res.status(400).json({ error: "Levelname fehlt" });
+  }
+
+  const parsedXp = Number(xp_required);
+  if (!Number.isInteger(parsedXp) || parsedXp < 0) {
+    // 0 ist erlaubt, negative Werte nicht
+    return res
+      .status(400)
+      .json({ error: "XP muss eine ganze Zahl >= 0 sein" });
+  }
+
+  await query(
+    "INSERT INTO levels (name, description, xp_required) VALUES ($1,$2,$3)",
+    [name.trim(), description || null, parsedXp]
+  );
+
+  res.json({ success: true });
+});
+
+app.delete("/api/admin/levels/:id", async (req, res) => {
+  await query("DELETE FROM levels WHERE id=$1", [req.params.id]);
+  res.json({ success: true });
+});
+
+// ----------------------------------------------------
+// STUDENT-UPLOAD ADMIN
 // ----------------------------------------------------
 app.get("/api/admin/uploads/:student_id", async (req, res) => {
   const r = await query(
@@ -546,49 +569,16 @@ app.delete("/api/admin/uploads/:id", async (req, res) => {
 });
 
 // ----------------------------------------------------
-// LEVEL – Admin
-// ----------------------------------------------------
-app.get("/api/admin/levels", async (req, res) => {
-  const r = await query(
-    "SELECT id, name, xp_required FROM levels ORDER BY xp_required ASC"
-  );
-  res.json(r.rows);
-});
-
-app.post("/api/admin/levels", async (req, res) => {
-  const { name, xp_required } = req.body;
-  const xp = Number(xp_required);
-
-  if (!name || name.trim() === "" || isNaN(xp) || xp < 0) {
-    return res.status(400).json({ error: "Name oder XP ungültig" });
-  }
-
-  await query(
-    "INSERT INTO levels (name, xp_required) VALUES ($1,$2)",
-    [name.trim(), xp]
-  );
-
-  res.json({ success: true });
-});
-
-app.delete("/api/admin/levels/:id", async (req, res) => {
-  await query("DELETE FROM levels WHERE id=$1", [req.params.id]);
-  res.json({ success: true });
-});
-
-// ----------------------------------------------------
-// SERVER START
+// START
 // ----------------------------------------------------
 const PORT = process.env.PORT || 3000;
 
 migrate()
   .then(autoFixColumns)
   .then(() => {
-    app.listen(PORT, () =>
-      console.log("Server läuft auf Port", PORT)
-    );
+    app.listen(PORT, () => console.log("Server läuft auf Port", PORT));
   })
   .catch((err) => {
-    console.error("Fehler bei Migration/Startup:", err);
+    console.error("Fehler bei Migration/Start:", err);
     process.exit(1);
   });
