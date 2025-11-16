@@ -1,5 +1,6 @@
 // ==========================================
-// server.js – Temple of Logic (R2 + Levels, stabil)
+// server.js – Temple of Logic
+// Basis: funktionierende Version mit R2 + Levels in xp_levels
 // ==========================================
 
 import express from "express";
@@ -8,6 +9,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import pg from "pg";
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 import { uploadToR2 } from "./r2.js";
 
@@ -31,23 +33,46 @@ export async function query(q, params) {
 }
 
 // ----------------------------------------------------
-// TRAITS + ITEMS (für Student-Charaktere)
+// AUTO-FIX FEHLENDE SPALTEN
+// ----------------------------------------------------
+async function autoFixColumns() {
+  console.log("Prüfe fehlende Spalten…");
+
+  await query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS character_id INTEGER REFERENCES characters(id);
+  `);
+
+  await query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS traits JSONB;
+  `);
+
+  await query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS items JSONB;
+  `);
+
+  console.log("Auto-Fix abgeschlossen.");
+}
+
+// ----------------------------------------------------
+// TRAITS + ITEMS
 // ----------------------------------------------------
 const TRAITS = [
-  "Neugierig","Ausdauernd","Kreativ","Hilfsbereit","Strukturiert",
-  "Risikofreudig","Ruhig","Zielstrebig","Analytisch","Teamorientiert",
-  "Selbstkritisch","Optimistisch","Aufmerksam","Pragmatisch","Mutig",
-  "Sorgfältig","Logisch denkend","Erfinderisch","Geduldig","Inspirierend"
+  "Neugierig", "Ausdauernd", "Kreativ", "Hilfsbereit", "Strukturiert",
+  "Risikofreudig", "Ruhig", "Zielstrebig", "Analytisch", "Teamorientiert",
+  "Selbstkritisch", "Optimistisch", "Aufmerksam", "Pragmatisch", "Mutig",
+  "Sorgfältig", "Logisch denkend", "Erfinderisch", "Geduldig", "Inspirierend",
 ];
 
 const ITEMS = [
-  "Zirkel der Präzision","Rechenamulett","Logikstein","Notizrolle der Klarheit",
-  "Schutzbrille der Konzentration","Zauberstift des Beweises","Kompass der Richtung",
-  "Rucksack der Ideen","Lineal des Gleichgewichts","Lampe des Einfalls",
-  "Formelbuch des Wissens","Tasche der Zufälle","Würfel der Wahrscheinlichkeit",
-  "Chronometer der Geduld","Mantel der Logik","Rechenbrett des Ausgleichs",
-  "Trank der Übersicht","Kristall des Beweises","Talisman der Motivation",
-  "Zauberstab des Verständnisses"
+  "Zirkel der Präzision", "Rechenamulett", "Logikstein",
+  "Notizrolle der Klarheit", "Schutzbrille der Konzentration",
+  "Zauberstift des Beweises", "Kompass der Richtung", "Rucksack der Ideen",
+  "Lineal des Gleichgewichts", "Lampe des Einfalls",
+  "Formelbuch des Wissens", "Tasche der Zufälle",
+  "Würfel der Wahrscheinlichkeit", "Chronometer der Geduld",
+  "Mantel der Logik", "Rechenbrett des Ausgleichs", "Trank der Übersicht",
+  "Kristall des Beweises", "Talisman der Motivation",
+  "Zauberstab des Verständnisses",
 ];
 
 function pickThree(arr) {
@@ -60,7 +85,6 @@ function pickThree(arr) {
 async function migrate() {
   console.log("Starte Migration…");
 
-  // Klassen
   await query(`
     CREATE TABLE IF NOT EXISTS classes (
       id SERIAL PRIMARY KEY,
@@ -68,7 +92,6 @@ async function migrate() {
     );
   `);
 
-  // Charaktere
   await query(`
     CREATE TABLE IF NOT EXISTS characters (
       id SERIAL PRIMARY KEY,
@@ -78,7 +101,6 @@ async function migrate() {
     );
   `);
 
-  // Users
   await query(`
     CREATE TABLE IF NOT EXISTS users (
       id SERIAL PRIMARY KEY,
@@ -95,7 +117,6 @@ async function migrate() {
     );
   `);
 
-  // Missionen
   await query(`
     CREATE TABLE IF NOT EXISTS missions (
       id SERIAL PRIMARY KEY,
@@ -107,7 +128,6 @@ async function migrate() {
     );
   `);
 
-  // Schüler-Uploads
   await query(`
     CREATE TABLE IF NOT EXISTS student_uploads (
       id SERIAL PRIMARY KEY,
@@ -117,7 +137,6 @@ async function migrate() {
     );
   `);
 
-  // Bonuskarten
   await query(`
     CREATE TABLE IF NOT EXISTS bonus_cards (
       id SERIAL PRIMARY KEY,
@@ -128,40 +147,17 @@ async function migrate() {
     );
   `);
 
-  // Level
+  // Neue, saubere Level-Tabelle – wir fassen deine alte "levels" nicht an
   await query(`
-    CREATE TABLE IF NOT EXISTS levels (
+    CREATE TABLE IF NOT EXISTS xp_levels (
       id SERIAL PRIMARY KEY,
-      title TEXT NOT NULL,
-      required_xp INTEGER NOT NULL
+      name TEXT NOT NULL,
+      required_xp INTEGER NOT NULL,
+      created_at TIMESTAMP DEFAULT NOW()
     );
   `);
 
   console.log("Migration abgeschlossen.");
-}
-
-// ----------------------------------------------------
-// AUTO-FIX (falls alte DB-Struktur existiert)
-// ----------------------------------------------------
-async function autoFixColumns() {
-  console.log("Prüfe fehlende Spalten…");
-
-  // Falls users aus einer älteren Version ohne traits/items/character_id kommt:
-  await query(`
-    ALTER TABLE users
-      ADD COLUMN IF NOT EXISTS character_id INTEGER REFERENCES characters(id),
-      ADD COLUMN IF NOT EXISTS traits JSONB,
-      ADD COLUMN IF NOT EXISTS items JSONB;
-  `);
-
-  // Falls levels aus älterer Version ohne title/required_xp
-  await query(`
-    ALTER TABLE levels
-      ADD COLUMN IF NOT EXISTS title TEXT,
-      ADD COLUMN IF NOT EXISTS required_xp INTEGER DEFAULT 0;
-  `);
-
-  console.log("Auto-Fix abgeschlossen.");
 }
 
 // ----------------------------------------------------
@@ -175,7 +171,13 @@ app.use(fileUpload());
 // Static Files
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// public + ggf. lokaler Upload-Fallback
 app.use(express.static(path.join(__dirname, "public")));
+const localUploadDir = path.join(__dirname, "public", "uploads");
+if (!fs.existsSync(localUploadDir)) {
+  fs.mkdirSync(localUploadDir, { recursive: true });
+}
 
 // ----------------------------------------------------
 // LOGIN
@@ -186,9 +188,8 @@ app.post("/api/auth/login", async (req, res) => {
   const r = await query("SELECT * FROM users WHERE name=$1", [name]);
   if (!r.rows[0]) return res.status(400).json({ error: "Benutzer existiert nicht" });
 
-  if (r.rows[0].password !== password) {
+  if (r.rows[0].password !== password)
     return res.status(400).json({ error: "Falsches Passwort" });
-  }
 
   res.json({
     id: r.rows[0].id,
@@ -201,7 +202,7 @@ app.post("/api/auth/login", async (req, res) => {
 // =======================  STUDENT-BEREICH  ===========================
 // =====================================================================
 
-// First Login: Charakter, Traits, Items vergeben
+// FIRST LOGIN – Charakter + Traits + Items generieren
 app.post("/api/student/first-login", async (req, res) => {
   const { user_id } = req.body;
 
@@ -228,7 +229,7 @@ app.post("/api/student/first-login", async (req, res) => {
   res.json({ character_id: randomCharId, traits, items });
 });
 
-// Student: Profil
+// STUDENT: /me
 app.get("/api/student/me/:id", async (req, res) => {
   const userId = req.params.id;
 
@@ -243,6 +244,19 @@ app.get("/api/student/me/:id", async (req, res) => {
     character = c.rows[0] || null;
   }
 
+  // aktuelles Level bestimmen
+  const lvlRes = await query(
+    "SELECT * FROM xp_levels ORDER BY required_xp ASC"
+  );
+  const levels = lvlRes.rows;
+
+  let currentLevel = null;
+  for (const lvl of levels) {
+    if (user.highest_xp >= lvl.required_xp) {
+      currentLevel = lvl;
+    }
+  }
+
   res.json({
     id: user.id,
     name: user.name,
@@ -252,10 +266,11 @@ app.get("/api/student/me/:id", async (req, res) => {
     traits: user.traits || [],
     items: user.items || [],
     character,
+    level: currentLevel,
   });
 });
 
-// Student: eigene Uploads
+// STUDENT: Upload-Liste
 app.get("/api/student/uploads/:id", async (req, res) => {
   const r = await query(
     "SELECT * FROM student_uploads WHERE student_id=$1 ORDER BY id DESC",
@@ -264,21 +279,30 @@ app.get("/api/student/uploads/:id", async (req, res) => {
   res.json(r.rows);
 });
 
-// Student: Datei hochladen (Bild), landet in R2
+// STUDENT: Datei hochladen
 app.post("/api/student/upload", async (req, res) => {
   const { student_id } = req.body;
   if (!req.files?.file) return res.status(400).json({ error: "Keine Datei" });
 
   const file = req.files.file;
   const filename = "upload_" + Date.now() + "_" + file.name;
-  const url = await uploadToR2(file, filename);
+
+  let url;
+  try {
+    url = await uploadToR2(file, filename);
+  } catch (e) {
+    console.error("Upload zu R2 fehlgeschlagen, nutze lokalen Fallback:", e);
+    const localPath = path.join(localUploadDir, filename);
+    await fs.promises.writeFile(localPath, file.data);
+    url = "/uploads/" + filename;
+  }
 
   await query(
     "INSERT INTO student_uploads (student_id, file_url) VALUES ($1,$2)",
     [student_id, url]
   );
 
-  res.json({ success: true });
+  res.json({ success: true, url });
 });
 
 // =====================================================================
@@ -353,13 +377,11 @@ app.post("/api/admin/xp/class", async (req, res) => {
   res.json({ success: true });
 });
 
-// Mission → ausgewählte Schüler
+// Mission → Schüler
 app.post("/api/admin/xp/mission-students", async (req, res) => {
   const { student_ids, mission_id } = req.body;
 
   const r = await query("SELECT xp_reward FROM missions WHERE id=$1", [mission_id]);
-  if (!r.rows[0]) return res.status(400).json({ error: "Mission nicht gefunden" });
-
   const xp = r.rows[0].xp_reward;
 
   for (let id of student_ids) {
@@ -372,13 +394,11 @@ app.post("/api/admin/xp/mission-students", async (req, res) => {
   res.json({ success: true });
 });
 
-// Mission → ganze Klasse
+// Mission → Klasse
 app.post("/api/admin/xp/mission-class", async (req, res) => {
   const { class_id, mission_id } = req.body;
 
   const r = await query("SELECT xp_reward FROM missions WHERE id=$1", [mission_id]);
-  if (!r.rows[0]) return res.status(400).json({ error: "Mission nicht gefunden" });
-
   const xp = r.rows[0].xp_reward;
 
   await query(
@@ -399,15 +419,20 @@ app.get("/api/admin/missions", async (req, res) => {
 
 app.post("/api/admin/missions", async (req, res) => {
   const { title, xp_reward } = req.body;
-  if (!title || !xp_reward) {
-    return res.status(400).json({ error: "Titel und XP nötig" });
-  }
 
   let imageUrl = null;
   if (req.files?.image) {
     const file = req.files.image;
     const filename = "mission_" + Date.now() + "_" + file.name;
-    imageUrl = await uploadToR2(file, filename);
+
+    try {
+      imageUrl = await uploadToR2(file, filename);
+    } catch (e) {
+      console.error("R2-Upload fehlgeschlagen, nutze lokalen Fallback:", e);
+      const localPath = path.join(localUploadDir, filename);
+      await fs.promises.writeFile(localPath, file.data);
+      imageUrl = "/uploads/" + filename;
+    }
   }
 
   await query(
@@ -424,7 +449,7 @@ app.delete("/api/admin/missions/:id", async (req, res) => {
 });
 
 // ----------------------------------------------------
-// BONUSKARTEN (mit R2 Upload)
+// BONUSKARTEN
 // ----------------------------------------------------
 app.get("/api/admin/bonus", async (req, res) => {
   const r = await query("SELECT * FROM bonus_cards ORDER BY id DESC");
@@ -438,7 +463,15 @@ app.post("/api/admin/bonus", async (req, res) => {
   if (req.files?.image) {
     const file = req.files.image;
     const filename = "bonus_" + Date.now() + "_" + file.name;
-    imageUrl = await uploadToR2(file, filename);
+
+    try {
+      imageUrl = await uploadToR2(file, filename);
+    } catch (e) {
+      console.error("R2-Upload fehlgeschlagen, nutze lokalen Fallback:", e);
+      const localPath = path.join(localUploadDir, filename);
+      await fs.promises.writeFile(localPath, file.data);
+      imageUrl = "/uploads/" + filename;
+    }
   }
 
   await query(
@@ -455,7 +488,7 @@ app.delete("/api/admin/bonus/:id", async (req, res) => {
 });
 
 // ----------------------------------------------------
-// CHARAKTERE (mit R2 Upload)
+// CHARAKTERE
 // ----------------------------------------------------
 app.get("/api/admin/characters", async (req, res) => {
   const r = await query("SELECT * FROM characters ORDER BY id DESC");
@@ -469,7 +502,15 @@ app.post("/api/admin/characters", async (req, res) => {
   if (req.files?.image) {
     const file = req.files.image;
     const filename = "character_" + Date.now() + "_" + file.name;
-    imageUrl = await uploadToR2(file, filename);
+
+    try {
+      imageUrl = await uploadToR2(file, filename);
+    } catch (e) {
+      console.error("R2-Upload fehlgeschlagen, nutze lokalen Fallback:", e);
+      const localPath = path.join(localUploadDir, filename);
+      await fs.promises.writeFile(localPath, file.data);
+      imageUrl = "/uploads/" + filename;
+    }
   }
 
   await query(
@@ -486,36 +527,31 @@ app.delete("/api/admin/characters/:id", async (req, res) => {
 });
 
 // ----------------------------------------------------
-// LEVEL
+// LEVEL (xp_levels)
 // ----------------------------------------------------
 app.get("/api/admin/levels", async (req, res) => {
   const r = await query(
-    "SELECT id, title, required_xp FROM levels ORDER BY required_xp ASC, id ASC"
+    "SELECT * FROM xp_levels ORDER BY required_xp ASC"
   );
   res.json(r.rows);
 });
 
 app.post("/api/admin/levels", async (req, res) => {
-  const { title, required_xp } = req.body;
-  if (!title || required_xp === undefined) {
-    return res.status(400).json({ error: "Titel und XP nötig" });
-  }
-
+  const { name, required_xp } = req.body;
   await query(
-    "INSERT INTO levels (title, required_xp) VALUES ($1,$2)",
-    [title, required_xp]
+    "INSERT INTO xp_levels (name, required_xp) VALUES ($1,$2)",
+    [name, required_xp]
   );
-
   res.json({ success: true });
 });
 
 app.delete("/api/admin/levels/:id", async (req, res) => {
-  await query("DELETE FROM levels WHERE id=$1", [req.params.id]);
+  await query("DELETE FROM xp_levels WHERE id=$1", [req.params.id]);
   res.json({ success: true });
 });
 
 // ----------------------------------------------------
-// ADMIN: Upload-Liste eines Schülers
+// ADMIN: Upload-Übersicht
 // ----------------------------------------------------
 app.get("/api/admin/uploads/:student_id", async (req, res) => {
   const r = await query(
@@ -541,6 +577,6 @@ migrate()
     app.listen(PORT, () => console.log("Server läuft auf Port", PORT));
   })
   .catch((err) => {
-    console.error("Migration Fehler:", err);
+    console.error("Fehler bei Migration/Start:", err);
     process.exit(1);
   });

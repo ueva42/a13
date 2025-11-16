@@ -1,43 +1,54 @@
-// r2.js – Cloudflare R2 Helper (ESM)
+// r2.js – R2 Upload Helper
 
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
-const accountId = process.env.R2_ACCOUNT_ID;
-const accessKeyId = process.env.R2_ACCESS_KEY_ID;
-const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
-const bucketName = process.env.R2_BUCKET_NAME;
-const publicBase = process.env.R2_PUBLIC_BASE_URL; // z. B. https://deinbucket.r2.dev
+const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID;
+const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY;
+const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID;
+const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME;
+const R2_PUBLIC_BASE_URL = process.env.R2_PUBLIC_BASE_URL; // z. B. https://<dein-public-domain>
 
-if (!accountId || !accessKeyId || !secretAccessKey || !bucketName) {
-  console.warn("R2-Umgebungsvariablen sind nicht vollständig gesetzt.");
+const hasR2Config =
+  R2_ACCESS_KEY_ID &&
+  R2_SECRET_ACCESS_KEY &&
+  R2_ACCOUNT_ID &&
+  R2_BUCKET_NAME &&
+  R2_PUBLIC_BASE_URL;
+
+let s3Client = null;
+
+if (hasR2Config) {
+  s3Client = new S3Client({
+    region: "auto",
+    endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    credentials: {
+      accessKeyId: R2_ACCESS_KEY_ID,
+      secretAccessKey: R2_SECRET_ACCESS_KEY,
+    },
+  });
+} else {
+  console.warn("R2-Umgebungsvariablen sind nicht vollständig gesetzt. Nutze lokalen Fallback.");
 }
 
-const r2Client = new S3Client({
-  region: "auto",
-  endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
-  credentials: {
-    accessKeyId,
-    secretAccessKey,
-  },
-});
-
-export async function uploadToR2(file, key) {
-  if (!file || !file.data) {
-    throw new Error("Ungültige Datei für Upload");
+/**
+ * file: Objekt von express-fileupload
+ * filename: Ziel-Dateiname
+ * Rückgabe: öffentliche URL (R2 oder lokal)
+ */
+export async function uploadToR2(file, filename) {
+  if (!hasR2Config || !s3Client) {
+    throw new Error("R2 nicht konfiguriert");
   }
 
-  const putCommand = new PutObjectCommand({
-    Bucket: bucketName,
-    Key: key,
+  const cmd = new PutObjectCommand({
+    Bucket: R2_BUCKET_NAME,
+    Key: filename,
     Body: file.data,
     ContentType: file.mimetype || "application/octet-stream",
   });
 
-  await r2Client.send(putCommand);
+  await s3Client.send(cmd);
 
-  if (publicBase) {
-    return `${publicBase.replace(/\/$/, "")}/${key}`;
-  }
-
-  return `https://${accountId}.r2.cloudflarestorage.com/${bucketName}/${key}`;
+  // Öffentliche URL (über dein R2 Public Base URL / CDN)
+  return `${R2_PUBLIC_BASE_URL.replace(/\/$/, "")}/${filename}`;
 }
