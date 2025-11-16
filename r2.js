@@ -1,68 +1,45 @@
-// r2.js – Cloudflare R2 Anbindung
-
+// -------------------------------------------------------------
+// R2 KONFIGURATION (Cloudflare R2 + AWS SDK kompatibel)
+// -------------------------------------------------------------
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
-const {
-  R2_ACCESS_KEY_ID,
-  R2_SECRET_ACCESS_KEY,
-  R2_ACCOUNT_ID,
-  R2_BUCKET_NAME,
-  R2_PUBLIC_BASE_URL,
-} = process.env;
-
-/**
- * Sind alle nötigen Variablen gesetzt?
- */
-export const r2Configured = Boolean(
-  R2_ACCESS_KEY_ID &&
-    R2_SECRET_ACCESS_KEY &&
-    R2_ACCOUNT_ID &&
-    R2_BUCKET_NAME &&
-    R2_PUBLIC_BASE_URL
+const R2_ENABLED = Boolean(
+  process.env.R2_ACCOUNT_ID &&
+  process.env.R2_BUCKET_NAME &&
+  process.env.R2_PUBLIC_BASE_URL &&
+  process.env.R2_ACCESS_KEY_ID &&
+  process.env.R2_SECRET_ACCESS_KEY
 );
 
-let s3Client = null;
+let r2 = null;
 
-if (r2Configured) {
-  s3Client = new S3Client({
+if (R2_ENABLED) {
+  r2 = new S3Client({
     region: "auto",
-    endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
     credentials: {
-      accessKeyId: R2_ACCESS_KEY_ID,
-      secretAccessKey: R2_SECRET_ACCESS_KEY,
+      accessKeyId: process.env.R2_ACCESS_KEY_ID,
+      secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
     },
   });
-  console.log("R2: konfiguriert, Uploads aktiviert.");
-} else {
-  console.log("R2: NICHT vollständig konfiguriert – Uploads ohne Bild-URL.");
 }
 
-/**
- * Datei nach R2 hochladen.
- * file: Objekt von express-fileupload (file.data, file.mimetype, file.name)
- * key:  Dateiname im Bucket (z. B. "mission_123.png")
- * Rückgabe: öffentliche URL oder null bei Fehler
- */
-export async function uploadToR2(file, key) {
-  if (!r2Configured || !s3Client) {
-    console.log("R2: nicht konfiguriert – Upload übersprungen.");
-    return null;
-  }
+// Upload-Helper
+async function uploadToR2(buffer, filename, mimetype) {
+  if (!R2_ENABLED) return null;
 
-  try {
-    await s3Client.send(
-      new PutObjectCommand({
-        Bucket: R2_BUCKET_NAME,
-        Key: key,
-        Body: file.data,
-        ContentType: file.mimetype || "application/octet-stream",
-      })
-    );
+  const key = `uploads/${Date.now()}-${filename}`;
 
-    const base = R2_PUBLIC_BASE_URL.replace(/\/+$/, "");
-    return `${base}/${encodeURIComponent(key)}`;
-  } catch (err) {
-    console.error("R2 Upload Error:", err);
-    return null; // App läuft weiter, nur ohne Bild
-  }
+  await r2.send(
+    new PutObjectCommand({
+      Bucket: process.env.R2_BUCKET_NAME,
+      Key: key,
+      Body: buffer,
+      ContentType: mimetype
+    })
+  );
+
+  return `${process.env.R2_PUBLIC_BASE_URL}/${process.env.R2_BUCKET_NAME}/${key}`;
 }
+
+export { uploadToR2, R2_ENABLED };
