@@ -1,322 +1,100 @@
-// ==========================================
-// server.js – Temple of Logic (stabile Version mit R2 + Level)
-// ==========================================
-
 import express from "express";
 import fileUpload from "express-fileupload";
+import pkg from "pg";
+const { Pool } = pkg;
 import cors from "cors";
-import dotenv from "dotenv";
-import pg from "pg";
-import path from "path";
-import { fileURLToPath } from "url";
-import { uploadToR2, r2Configured } from "./r2.js";
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
-dotenv.config();
-
-// ----------------------------------------------------
-// PostgreSQL Verbindung
-// ----------------------------------------------------
-const pool = new pg.Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
-});
-
-export async function query(q, params) {
-  const client = await pool.connect();
-  try {
-    return await client.query(q, params);
-  } finally {
-    client.release();
-  }
-}
-
-// ----------------------------------------------------
-// AUTO-FIX FEHLENDE SPALTEN
-// ----------------------------------------------------
-async function autoFixColumns() {
-  console.log("Prüfe fehlende Spalten…");
-
-  await query(`
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS character_id INTEGER REFERENCES characters(id);
-  `);
-
-  await query(`
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS traits JSONB;
-  `);
-
-  await query(`
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS items JSONB;
-  `);
-
-  console.log("Auto-Fix abgeschlossen.");
-}
-
-// ----------------------------------------------------
-// TRAITS + ITEMS
-// ----------------------------------------------------
-const TRAITS = [
-  "Neugierig",
-  "Ausdauernd",
-  "Kreativ",
-  "Hilfsbereit",
-  "Strukturiert",
-  "Risikofreudig",
-  "Ruhig",
-  "Zielstrebig",
-  "Analytisch",
-  "Teamorientiert",
-  "Selbstkritisch",
-  "Optimistisch",
-  "Aufmerksam",
-  "Pragmatisch",
-  "Mutig",
-  "Sorgfältig",
-  "Logisch denkend",
-  "Erfinderisch",
-  "Geduldig",
-  "Inspirierend",
-];
-
-const ITEMS = [
-  "Zirkel der Präzision",
-  "Rechenamulett",
-  "Logikstein",
-  "Notizrolle der Klarheit",
-  "Schutzbrille der Konzentration",
-  "Zauberstift des Beweises",
-  "Kompass der Richtung",
-  "Rucksack der Ideen",
-  "Lineal des Gleichgewichts",
-  "Lampe des Einfalls",
-  "Formelbuch des Wissens",
-  "Tasche der Zufälle",
-  "Würfel der Wahrscheinlichkeit",
-  "Chronometer der Geduld",
-  "Mantel der Logik",
-  "Rechenbrett des Ausgleichs",
-  "Trank der Übersicht",
-  "Kristall des Beweises",
-  "Talisman der Motivation",
-  "Zauberstab des Verständnisses",
-];
-
-function pickThree(arr) {
-  return [...arr].sort(() => Math.random() - 0.5).slice(0, 3);
-}
-
-// ----------------------------------------------------
-// MIGRATION
-// ----------------------------------------------------
-async function migrate() {
-  console.log("Starte Migration…");
-
-  await query(`
-    CREATE TABLE IF NOT EXISTS classes (
-      id SERIAL PRIMARY KEY,
-      name TEXT NOT NULL UNIQUE
-    );
-  `);
-
-  await query(`
-    CREATE TABLE IF NOT EXISTS characters (
-      id SERIAL PRIMARY KEY,
-      name TEXT NOT NULL,
-      image_url TEXT,
-      created_at TIMESTAMP DEFAULT NOW()
-    );
-  `);
-
-  await query(`
-    CREATE TABLE IF NOT EXISTS users (
-      id SERIAL PRIMARY KEY,
-      name TEXT NOT NULL UNIQUE,
-      password TEXT NOT NULL,
-      role TEXT NOT NULL DEFAULT 'student',
-      class_id INTEGER REFERENCES classes(id) ON DELETE SET NULL,
-      xp INTEGER DEFAULT 0,
-      highest_xp INTEGER DEFAULT 0,
-      character_id INTEGER REFERENCES characters(id),
-      traits JSONB,
-      items JSONB,
-      created_at TIMESTAMP DEFAULT NOW()
-    );
-  `);
-
-  await query(`
-    CREATE TABLE IF NOT EXISTS missions (
-      id SERIAL PRIMARY KEY,
-      title TEXT NOT NULL,
-      xp_reward INTEGER NOT NULL,
-      image_url TEXT,
-      requires_upload BOOLEAN DEFAULT false,
-      created_at TIMESTAMP DEFAULT NOW()
-    );
-  `);
-
-  await query(`
-    CREATE TABLE IF NOT EXISTS student_uploads (
-      id SERIAL PRIMARY KEY,
-      student_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-      file_url TEXT NOT NULL,
-      created_at TIMESTAMP DEFAULT NOW()
-    );
-  `);
-
-  await query(`
-    CREATE TABLE IF NOT EXISTS bonus_cards (
-      id SERIAL PRIMARY KEY,
-      title TEXT NOT NULL,
-      xp_cost INTEGER NOT NULL,
-      image_url TEXT,
-      created_at TIMESTAMP DEFAULT NOW()
-    );
-  `);
-
-  // Levels: XP >= 0 erlaubt, xp_required NOT NULL
-  await query(`
-    CREATE TABLE IF NOT EXISTS levels (
-      id SERIAL PRIMARY KEY,
-      name TEXT NOT NULL,
-      description TEXT,
-      xp_required INTEGER NOT NULL,
-      created_at TIMESTAMP DEFAULT NOW()
-    );
-  `);
-
-  console.log("Migration abgeschlossen.");
-}
-
-// ----------------------------------------------------
-// EXPRESS
-// ----------------------------------------------------
 const app = express();
-app.use(cors());
 app.use(express.json());
+app.use(cors());
 app.use(fileUpload());
 
-// Static Files
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-app.use(express.static(path.join(__dirname, "public")));
+// -------------------------------------------------------
+// DATABASE
+// -------------------------------------------------------
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
+});
 
-// ----------------------------------------------------
+async function query(sql, params) {
+  const res = await pool.query(sql, params);
+  return res;
+}
+
+// -------------------------------------------------------
+// R2 CLIENT
+// -------------------------------------------------------
+const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID;
+const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY;
+const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID;
+const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME;
+const R2_PUBLIC_BASE_URL = process.env.R2_PUBLIC_BASE_URL;
+
+let r2Enabled = true;
+
+if (!R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY || !R2_ACCOUNT_ID || !R2_BUCKET_NAME || !R2_PUBLIC_BASE_URL) {
+  console.log("⚠️ R2 NICHT vollständig konfiguriert – Uploads laufen ohne Bilder weiter.");
+  r2Enabled = false;
+}
+
+let r2 = null;
+if (r2Enabled) {
+  r2 = new S3Client({
+    region: "auto",
+    endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    credentials: {
+      accessKeyId: R2_ACCESS_KEY_ID,
+      secretAccessKey: R2_SECRET_ACCESS_KEY
+    }
+  });
+}
+
+// -------------------------------------------------------
+// R2 UPLOAD-FUNKTION
+// -------------------------------------------------------
+async function uploadToR2(buffer, filename, mimetype) {
+  if (!r2Enabled) return null;
+
+  try {
+    const key = `uploads/${Date.now()}_${filename}`;
+
+    await r2.send(new PutObjectCommand({
+      Bucket: R2_BUCKET_NAME,
+      Key: key,
+      Body: buffer,
+      ContentType: mimetype
+    }));
+
+    return `${R2_PUBLIC_BASE_URL}/${key}`;
+  } catch (err) {
+    console.log("R2 Upload Error:", err);
+    return null;
+  }
+}
+
+// -------------------------------------------------------
 // LOGIN
-// ----------------------------------------------------
-app.post("/api/auth/login", async (req, res) => {
-  const { name, password } = req.body;
+// -------------------------------------------------------
+app.post("/api/login", async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    const q = await query("SELECT * FROM users WHERE name=$1", [username]);
 
-  const r = await query("SELECT * FROM users WHERE name=$1", [name]);
-  if (!r.rows[0])
-    return res.status(400).json({ error: "Benutzer existiert nicht" });
+    if (!q.rows.length) return res.status(400).json({ error: "User nicht gefunden" });
+    if (q.rows[0].password !== password) return res.status(400).json({ error: "Passwort falsch" });
 
-  if (r.rows[0].password !== password)
-    return res.status(400).json({ error: "Falsches Passwort" });
-
-  res.json({
-    id: r.rows[0].id,
-    role: r.rows[0].role,
-    class_id: r.rows[0].class_id,
-  });
-});
-
-// =====================================================================
-// =======================  STUDENT-BEREICH  ===========================
-// =====================================================================
-
-// FIRST LOGIN – Charakter + Traits + Items generieren
-app.post("/api/student/first-login", async (req, res) => {
-  const { user_id } = req.body;
-
-  const r = await query("SELECT * FROM users WHERE id=$1", [user_id]);
-  if (!r.rows[0]) return res.status(400).json({ error: "User existiert nicht" });
-
-  const user = r.rows[0];
-
-  // Überspringen, falls schon vorhanden
-  if (user.character_id && user.traits && user.items) {
-    return res.json({ skip: true });
+    return res.json({ id: q.rows[0].id, role: q.rows[0].role });
+  } catch (err) {
+    console.log("Login Error:", err);
+    res.status(500).json({ error: "Serverfehler" });
   }
-
-  const charRes = await query(
-    "SELECT id FROM characters ORDER BY RANDOM() LIMIT 1"
-  );
-  const randomCharId = charRes.rows[0]?.id || null;
-
-  const traits = pickThree(TRAITS);
-  const items = pickThree(ITEMS);
-
-  await query(
-    "UPDATE users SET character_id=$1, traits=$2, items=$3 WHERE id=$4",
-    [randomCharId, JSON.stringify(traits), JSON.stringify(items), user_id]
-  );
-
-  res.json({ character_id: randomCharId, traits, items });
 });
 
-// STUDENT: /me (alle Daten)
-app.get("/api/student/me/:id", async (req, res) => {
-  const userId = req.params.id;
-
-  const r = await query("SELECT * FROM users WHERE id=$1", [userId]);
-  if (!r.rows[0]) return res.status(404).json({ error: "User nicht gefunden" });
-
-  const user = r.rows[0];
-
-  let character = null;
-  if (user.character_id) {
-    const c = await query("SELECT * FROM characters WHERE id=$1", [
-      user.character_id,
-    ]);
-    character = c.rows[0] || null;
-  }
-
-  res.json({
-    id: user.id,
-    name: user.name,
-    xp: user.xp,
-    highest_xp: user.highest_xp,
-    class_id: user.class_id,
-    traits: user.traits || [],
-    items: user.items || [],
-    character,
-  });
-});
-
-// STUDENT: Upload-Liste
-app.get("/api/student/uploads/:id", async (req, res) => {
-  const r = await query(
-    "SELECT * FROM student_uploads WHERE student_id=$1 ORDER BY id DESC",
-    [req.params.id]
-  );
-  res.json(r.rows);
-});
-
-// STUDENT: Upload hochladen
-app.post("/api/student/upload", async (req, res) => {
-  const { student_id } = req.body;
-
-  if (!req.files?.file) return res.status(400).json({ error: "Keine Datei" });
-
-  const file = req.files.file;
-  const filename = "upload_" + Date.now() + "_" + file.name;
-
-  const url = await uploadToR2(file, filename);
-
-  await query(
-    "INSERT INTO student_uploads (student_id, file_url) VALUES ($1,$2)",
-    [student_id, url || ""]
-  );
-
-  res.json({ success: true, file_url: url });
-});
-
-// =====================================================================
-// =========================  ADMIN-BEREICH  ============================
-// =====================================================================
-
-// ----------------------------------------------------
-// KLASSEN
-// ----------------------------------------------------
+// -------------------------------------------------------
+// ADMIN: KLASSEN
+// -------------------------------------------------------
 app.get("/api/admin/classes", async (req, res) => {
   const r = await query("SELECT * FROM classes ORDER BY name ASC");
   res.json({ classes: r.rows });
@@ -324,261 +102,192 @@ app.get("/api/admin/classes", async (req, res) => {
 
 app.post("/api/admin/classes", async (req, res) => {
   await query("INSERT INTO classes (name) VALUES ($1)", [req.body.name]);
-  res.json({ success: true });
+  res.json({ ok: true });
 });
 
 app.delete("/api/admin/classes/:id", async (req, res) => {
   await query("DELETE FROM classes WHERE id=$1", [req.params.id]);
-  res.json({ success: true });
+  res.json({ ok: true });
 });
 
-// ----------------------------------------------------
-// SCHÜLER
-// ----------------------------------------------------
+// -------------------------------------------------------
+// ADMIN: STUDENTS
+// -------------------------------------------------------
 app.get("/api/admin/students/:class_id", async (req, res) => {
-  const r = await query(
-    "SELECT * FROM users WHERE class_id=$1 ORDER BY name ASC",
-    [req.params.class_id]
-  );
+  const r = await query("SELECT * FROM users WHERE class_id=$1 ORDER BY name ASC", [req.params.class_id]);
   res.json(r.rows);
 });
 
 app.post("/api/admin/students", async (req, res) => {
   const { name, password, class_id } = req.body;
-  await query(
-    "INSERT INTO users (name, password, role, class_id) VALUES ($1,$2,'student',$3)",
+  await query("INSERT INTO users (name, password, class_id, xp, role) VALUES ($1,$2,$3,0,'student')",
     [name, password, class_id]
   );
-  res.json({ success: true });
+  res.json({ ok: true });
 });
 
 app.delete("/api/admin/students/:id", async (req, res) => {
   await query("DELETE FROM users WHERE id=$1", [req.params.id]);
-  res.json({ success: true });
+  res.json({ ok: true });
 });
 
-// ----------------------------------------------------
-// XP
-// ----------------------------------------------------
+// -------------------------------------------------------
+// XP: MANUELL
+// -------------------------------------------------------
 app.post("/api/admin/xp/student", async (req, res) => {
   const { student_id, amount } = req.body;
 
+  await query("UPDATE users SET xp = xp + $1 WHERE id=$2", [amount, student_id]);
   await query(
-    "UPDATE users SET xp = xp + $1, highest_xp = GREATEST(highest_xp, xp + $1) WHERE id=$2",
-    [amount, student_id]
+    "INSERT INTO xp_transactions (student_id, amount, awarded_by) VALUES ($1,$2,$3)",
+    [student_id, amount, null]
   );
 
-  res.json({ success: true });
+  res.json({ ok: true });
 });
 
 app.post("/api/admin/xp/class", async (req, res) => {
   const { class_id, amount } = req.body;
 
-  await query(
-    "UPDATE users SET xp = xp + $1, highest_xp = GREATEST(highest_xp, xp + $1) WHERE class_id=$2",
-    [amount, class_id]
-  );
-
-  res.json({ success: true });
+  await query("UPDATE users SET xp = xp + $1 WHERE class_id=$2", [amount, class_id]);
+  res.json({ ok: true });
 });
 
-// Mission → Schüler
-app.post("/api/admin/xp/mission-students", async (req, res) => {
-  const { student_ids, mission_id } = req.body;
-
-  const r = await query("SELECT xp_reward FROM missions WHERE id=$1", [
-    mission_id,
-  ]);
-  const xp = r.rows[0].xp_reward;
-
-  for (let id of student_ids) {
-    await query(
-      "UPDATE users SET xp=xp+$1, highest_xp=GREATEST(highest_xp, xp+$1) WHERE id=$2",
-      [xp, id]
-    );
-  }
-
-  res.json({ success: true });
-});
-
-// Mission → Klasse
-app.post("/api/admin/xp/mission-class", async (req, res) => {
-  const { class_id, mission_id } = req.body;
-
-  const r = await query("SELECT xp_reward FROM missions WHERE id=$1", [
-    mission_id,
-  ]);
-  const xp = r.rows[0].xp_reward;
-
-  await query(
-    "UPDATE users SET xp=xp+$1, highest_xp=GREATEST(highest_xp, xp+$1) WHERE class_id=$2",
-    [xp, class_id]
-  );
-
-  res.json({ success: true });
-});
-
-// ----------------------------------------------------
-// MISSIONEN (mit R2 Upload)
-// ----------------------------------------------------
+// -------------------------------------------------------
+// ADMIN: MISSIONEN
+// -------------------------------------------------------
 app.get("/api/admin/missions", async (req, res) => {
   const r = await query("SELECT * FROM missions ORDER BY id DESC");
   res.json(r.rows);
 });
 
 app.post("/api/admin/missions", async (req, res) => {
-  const { title, xp_reward } = req.body;
+  try {
+    let imageUrl = null;
 
-  let imageUrl = null;
-  if (req.files?.image) {
-    const file = req.files.image;
-    const filename = "mission_" + Date.now() + "_" + file.name;
-    imageUrl = await uploadToR2(file, filename);
+    if (req.files?.image) {
+      imageUrl = await uploadToR2(req.files.image.data, req.files.image.name, req.files.image.mimetype);
+    }
+
+    await query(
+      "INSERT INTO missions (title, xp_reward, requires_upload, image_url) VALUES ($1,$2,$3,$4)",
+      [
+        req.body.title,
+        req.body.xp_reward,
+        req.body.requires_upload === "on",
+        imageUrl
+      ]
+    );
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.log("Mission Upload Fehler:", err);
+    res.status(500).json({ error: "Mission konnte nicht gespeichert werden" });
   }
-
-  await query(
-    "INSERT INTO missions (title, xp_reward, image_url, requires_upload) VALUES ($1,$2,$3,$4)",
-    [
-      title,
-      Number(xp_reward),
-      imageUrl,
-      req.body.requires_upload === "true" || req.body.requires_upload === "on",
-    ]
-  );
-
-  res.json({ success: true });
 });
 
 app.delete("/api/admin/missions/:id", async (req, res) => {
   await query("DELETE FROM missions WHERE id=$1", [req.params.id]);
-  res.json({ success: true });
+  res.json({ ok: true });
 });
 
-// ----------------------------------------------------
-// BONUSKARTEN (mit R2 Upload)
-// ----------------------------------------------------
+// -------------------------------------------------------
+// ADMIN: BONUSKARTEN
+// -------------------------------------------------------
 app.get("/api/admin/bonus", async (req, res) => {
   const r = await query("SELECT * FROM bonus_cards ORDER BY id DESC");
   res.json(r.rows);
 });
 
 app.post("/api/admin/bonus", async (req, res) => {
-  const { title, xp_cost } = req.body;
+  try {
+    let imageUrl = null;
+    if (req.files?.image) {
+      imageUrl = await uploadToR2(req.files.image.data, req.files.image.name, req.files.image.mimetype);
+    }
 
-  let imageUrl = null;
-  if (req.files?.image) {
-    const file = req.files.image;
-    const filename = "bonus_" + Date.now() + "_" + file.name;
-    imageUrl = await uploadToR2(file, filename);
+    await query(
+      "INSERT INTO bonus_cards (title, xp_cost, image_url) VALUES ($1,$2,$3)",
+      [req.body.title, req.body.xp_cost, imageUrl]
+    );
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.log("Bonus Upload Fehler:", err);
+    res.status(500).json({ error: "Bonuskarte konnte nicht gespeichert werden" });
   }
-
-  await query(
-    "INSERT INTO bonus_cards (title, xp_cost, image_url) VALUES ($1,$2,$3)",
-    [title, Number(xp_cost), imageUrl]
-  );
-
-  res.json({ success: true });
 });
 
 app.delete("/api/admin/bonus/:id", async (req, res) => {
   await query("DELETE FROM bonus_cards WHERE id=$1", [req.params.id]);
-  res.json({ success: true });
+  res.json({ ok: true });
 });
 
-// ----------------------------------------------------
-// CHARAKTERE (mit R2 Upload)
-// ----------------------------------------------------
+// -------------------------------------------------------
+// ADMIN: CHARACTERS
+// -------------------------------------------------------
 app.get("/api/admin/characters", async (req, res) => {
   const r = await query("SELECT * FROM characters ORDER BY id DESC");
   res.json(r.rows);
 });
 
 app.post("/api/admin/characters", async (req, res) => {
-  const { name } = req.body;
+  try {
+    let imageUrl = null;
+    if (req.files?.image) {
+      imageUrl = await uploadToR2(req.files.image.data, req.files.image.name, req.files.image.mimetype);
+    }
 
-  let imageUrl = null;
-  if (req.files?.image) {
-    const file = req.files.image;
-    const filename = "character_" + Date.now() + "_" + file.name;
-    imageUrl = await uploadToR2(file, filename);
+    await query(
+      "INSERT INTO characters (name, image_url) VALUES ($1,$2)",
+      [req.body.name, imageUrl]
+    );
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.log("Character Upload Fehler:", err);
+    res.status(500).json({ error: "Charakter konnte nicht gespeichert werden" });
   }
-
-  await query("INSERT INTO characters (name, image_url) VALUES ($1,$2)", [
-    name,
-    imageUrl,
-  ]);
-
-  res.json({ success: true });
 });
 
 app.delete("/api/admin/characters/:id", async (req, res) => {
   await query("DELETE FROM characters WHERE id=$1", [req.params.id]);
-  res.json({ success: true });
+  res.json({ ok: true });
 });
 
-// ----------------------------------------------------
-// LEVEL (NEU) – XP >= 0 erlaubt
-// ----------------------------------------------------
+// -------------------------------------------------------
+// ADMIN: LEVELS (final fix!)
+// -------------------------------------------------------
 app.get("/api/admin/levels", async (req, res) => {
-  const r = await query("SELECT * FROM levels ORDER BY xp_required ASC, id ASC");
-  res.json(r.rows);
+  try {
+    const r = await query("SELECT * FROM levels ORDER BY xp_required ASC");
+    res.json(r.rows);
+  } catch (err) {
+    console.log("Level Load Error:", err);
+    res.status(500).json([]);
+  }
 });
 
 app.post("/api/admin/levels", async (req, res) => {
-  const { name, xp_required, description } = req.body;
+  try {
+    const { name, xp_required, description } = req.body;
 
-  if (!name || name.trim() === "") {
-    return res.status(400).json({ error: "Levelname fehlt" });
+    await query(
+      "INSERT INTO levels (name, xp_required, description) VALUES ($1,$2,$3)",
+      [name, xp_required, description || null]
+    );
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.log("Level Insert Error:", err);
+    res.status(500).json({ error: "Level konnte nicht gespeichert werden" });
   }
-
-  const parsedXp = Number(xp_required);
-  if (!Number.isInteger(parsedXp) || parsedXp < 0) {
-    // 0 ist erlaubt, negative Werte nicht
-    return res
-      .status(400)
-      .json({ error: "XP muss eine ganze Zahl >= 0 sein" });
-  }
-
-  await query(
-    "INSERT INTO levels (name, description, xp_required) VALUES ($1,$2,$3)",
-    [name.trim(), description || null, parsedXp]
-  );
-
-  res.json({ success: true });
 });
 
 app.delete("/api/admin/levels/:id", async (req, res) => {
   await query("DELETE FROM levels WHERE id=$1", [req.params.id]);
-  res.json({ success: true });
+  res.json({ ok: true });
 });
 
-// ----------------------------------------------------
-// STUDENT-UPLOAD ADMIN
-// ----------------------------------------------------
-app.get("/api/admin/uploads/:student_id", async (req, res) => {
-  const r = await query(
-    "SELECT * FROM student_uploads WHERE student_id=$1 ORDER BY id DESC",
-    [req.params.student_id]
-  );
-  res.json(r.rows);
-});
-
-app.delete("/api/admin/uploads/:id", async (req, res) => {
-  await query("DELETE FROM student_uploads WHERE id=$1", [req.params.id]);
-  res.json({ success: true });
-});
-
-// ----------------------------------------------------
-// START
-// ----------------------------------------------------
-const PORT = process.env.PORT || 3000;
-
-migrate()
-  .then(autoFixColumns)
-  .then(() => {
-    app.listen(PORT, () => console.log("Server läuft auf Port", PORT));
-  })
-  .catch((err) => {
-    console.error("Fehler bei Migration/Start:", err);
-    process.exit(1);
-  });
+// -------------------------------------------------------
+app.listen(8080, () => console.log("Server läuft auf Port 8080"));
