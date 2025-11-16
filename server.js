@@ -1,293 +1,292 @@
+// server.js – FINAL VERSION (Railway + R2 + XP + Level 0 Allowed)
+
 import express from "express";
-import fileUpload from "express-fileupload";
-import pkg from "pg";
-const { Pool } = pkg;
-import cors from "cors";
+import session from "express-session";
+import pg from "pg";
+import multer from "multer";
+import path from "path";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import dotenv from "dotenv";
+dotenv.config();
 
 const app = express();
 app.use(express.json());
-app.use(cors());
-app.use(fileUpload());
+app.use(express.urlencoded({ extended: true }));
 
-// -------------------------------------------------------
-// DATABASE
-// -------------------------------------------------------
-const pool = new Pool({
+// -----------------------------
+// STATIC FILES
+// -----------------------------
+app.use(express.static("public"));
+
+// -----------------------------
+// SESSION
+// -----------------------------
+app.use(
+  session({
+    secret: "tol-super-secret",
+    resave: false,
+    saveUninitialized: false,
+  })
+);
+
+// -----------------------------
+// POSTGRES
+// -----------------------------
+const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
 });
 
-async function query(sql, params) {
-  const res = await pool.query(sql, params);
-  return res;
+// Helper query
+async function query(q, p = []) {
+  const r = await pool.query(q, p);
+  return r;
 }
 
-// -------------------------------------------------------
-// R2 CLIENT
-// -------------------------------------------------------
-const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID;
-const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY;
-const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID;
-const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME;
-const R2_PUBLIC_BASE_URL = process.env.R2_PUBLIC_BASE_URL;
-
-let r2Enabled = true;
-
-if (!R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY || !R2_ACCOUNT_ID || !R2_BUCKET_NAME || !R2_PUBLIC_BASE_URL) {
-  console.log("⚠️ R2 NICHT vollständig konfiguriert – Uploads laufen ohne Bilder weiter.");
-  r2Enabled = false;
-}
+// -----------------------------
+// R2 CONFIG
+// -----------------------------
+const R2_ENABLED =
+  process.env.R2_ACCESS_KEY_ID &&
+  process.env.R2_SECRET_ACCESS_KEY &&
+  process.env.R2_ACCOUNT_ID &&
+  process.env.R2_BUCKET_NAME &&
+  process.env.R2_PUBLIC_BASE_URL;
 
 let r2 = null;
-if (r2Enabled) {
+
+if (R2_ENABLED) {
   r2 = new S3Client({
     region: "auto",
-    endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
     credentials: {
-      accessKeyId: R2_ACCESS_KEY_ID,
-      secretAccessKey: R2_SECRET_ACCESS_KEY
-    }
+      accessKeyId: process.env.R2_ACCESS_KEY_ID,
+      secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+    },
   });
 }
 
-// -------------------------------------------------------
-// R2 UPLOAD-FUNKTION
-// -------------------------------------------------------
-async function uploadToR2(buffer, filename, mimetype) {
-  if (!r2Enabled) return null;
+// -----------------------------
+// MULTER (in Memory)
+// -----------------------------
+const upload = multer({ storage: multer.memoryStorage() });
 
-  try {
-    const key = `uploads/${Date.now()}_${filename}`;
+// -----------------------------
+// MIGRATION: CREATE TABLES
+// -----------------------------
+async function migrate() {
+  await query(`
+    CREATE TABLE IF NOT EXISTS characters(
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL,
+      image_url TEXT,
+      created_at TIMESTAMP DEFAULT now()
+    );
+  `);
 
-    await r2.send(new PutObjectCommand({
-      Bucket: R2_BUCKET_NAME,
-      Key: key,
-      Body: buffer,
-      ContentType: mimetype
-    }));
+  await query(`
+    CREATE TABLE IF NOT EXISTS bonuscards(
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL,
+      image_url TEXT,
+      created_at TIMESTAMP DEFAULT now()
+    );
+  `);
 
-    return `${R2_PUBLIC_BASE_URL}/${key}`;
-  } catch (err) {
-    console.log("R2 Upload Error:", err);
-    return null;
-  }
+  await query(`
+    CREATE TABLE IF NOT EXISTS missions(
+      id SERIAL PRIMARY KEY,
+      title TEXT NOT NULL,
+      xp INT NOT NULL DEFAULT 0,
+      image_url TEXT,
+      created_at TIMESTAMP DEFAULT now()
+    );
+  `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS levels(
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL,
+      xp_required INT NOT NULL DEFAULT 0,
+      created_at TIMESTAMP DEFAULT now()
+    );
+  `);
 }
 
-// -------------------------------------------------------
-// LOGIN
-// -------------------------------------------------------
+await migrate();
+
+// -----------------------------
+// HELPERS
+// -----------------------------
+
+async function uploadToR2(file, folderName) {
+  if (!R2_ENABLED) return null;
+
+  const key = `${folderName}/${Date.now()}-${file.originalname}`;
+
+  await r2.send(
+    new PutObjectCommand({
+      Bucket: process.env.R2_BUCKET_NAME,
+      Key: key,
+      Body: file.buffer,
+      ContentType: file.mimetype,
+    })
+  );
+
+  return `${process.env.R2_PUBLIC_BASE_URL}/${key}`;
+}
+
+// -----------------------------
+// AUTH
+// -----------------------------
+function requireAdmin(req, res, next) {
+  if (!req.session.admin) return res.status(401).json({ error: "Unauthorized" });
+  next();
+}
+
 app.post("/api/login", async (req, res) => {
-  try {
-    const { username, password } = req.body;
-    const q = await query("SELECT * FROM users WHERE name=$1", [username]);
+  const { user, pass } = req.body;
 
-    if (!q.rows.length) return res.status(400).json({ error: "User nicht gefunden" });
-    if (q.rows[0].password !== password) return res.status(400).json({ error: "Passwort falsch" });
-
-    return res.json({ id: q.rows[0].id, role: q.rows[0].role });
-  } catch (err) {
-    console.log("Login Error:", err);
-    res.status(500).json({ error: "Serverfehler" });
+  if (user === "admin" && pass === "toladmin") {
+    req.session.admin = true;
+    return res.json({ ok: true });
   }
+  return res.status(400).json({ error: "wrong" });
 });
 
-// -------------------------------------------------------
-// ADMIN: KLASSEN
-// -------------------------------------------------------
-app.get("/api/admin/classes", async (req, res) => {
-  const r = await query("SELECT * FROM classes ORDER BY name ASC");
-  res.json({ classes: r.rows });
+app.get("/logout", (req, res) => {
+  req.session.destroy(() => {});
+  res.redirect("/login.html");
 });
 
-app.post("/api/admin/classes", async (req, res) => {
-  await query("INSERT INTO classes (name) VALUES ($1)", [req.body.name]);
-  res.json({ ok: true });
-});
-
-app.delete("/api/admin/classes/:id", async (req, res) => {
-  await query("DELETE FROM classes WHERE id=$1", [req.params.id]);
-  res.json({ ok: true });
-});
-
-// -------------------------------------------------------
-// ADMIN: STUDENTS
-// -------------------------------------------------------
-app.get("/api/admin/students/:class_id", async (req, res) => {
-  const r = await query("SELECT * FROM users WHERE class_id=$1 ORDER BY name ASC", [req.params.class_id]);
+// -----------------------------
+// ADMIN – LEVELS
+// -----------------------------
+app.get("/api/admin/levels", requireAdmin, async (req, res) => {
+  const r = await query("SELECT * FROM levels ORDER BY xp_required ASC");
   res.json(r.rows);
 });
 
-app.post("/api/admin/students", async (req, res) => {
-  const { name, password, class_id } = req.body;
-  await query("INSERT INTO users (name, password, class_id, xp, role) VALUES ($1,$2,$3,0,'student')",
-    [name, password, class_id]
+app.post("/api/admin/levels", requireAdmin, async (req, res) => {
+  const { name, xp_required } = req.body;
+
+  if (!name) return res.status(400).json({ error: "Name missing" });
+  if (xp_required < 0 || xp_required === "" || xp_required === null)
+    return res.status(400).json({ error: "XP missing" });
+
+  const r = await query(
+    "INSERT INTO levels(name, xp_required) VALUES($1,$2) RETURNING *",
+    [name, xp_required]
   );
-  res.json({ ok: true });
+  res.json(r.rows[0]);
 });
 
-app.delete("/api/admin/students/:id", async (req, res) => {
-  await query("DELETE FROM users WHERE id=$1", [req.params.id]);
-  res.json({ ok: true });
-});
-
-// -------------------------------------------------------
-// XP: MANUELL
-// -------------------------------------------------------
-app.post("/api/admin/xp/student", async (req, res) => {
-  const { student_id, amount } = req.body;
-
-  await query("UPDATE users SET xp = xp + $1 WHERE id=$2", [amount, student_id]);
-  await query(
-    "INSERT INTO xp_transactions (student_id, amount, awarded_by) VALUES ($1,$2,$3)",
-    [student_id, amount, null]
-  );
-
-  res.json({ ok: true });
-});
-
-app.post("/api/admin/xp/class", async (req, res) => {
-  const { class_id, amount } = req.body;
-
-  await query("UPDATE users SET xp = xp + $1 WHERE class_id=$2", [amount, class_id]);
-  res.json({ ok: true });
-});
-
-// -------------------------------------------------------
-// ADMIN: MISSIONEN
-// -------------------------------------------------------
-app.get("/api/admin/missions", async (req, res) => {
-  const r = await query("SELECT * FROM missions ORDER BY id DESC");
-  res.json(r.rows);
-});
-
-app.post("/api/admin/missions", async (req, res) => {
-  try {
-    let imageUrl = null;
-
-    if (req.files?.image) {
-      imageUrl = await uploadToR2(req.files.image.data, req.files.image.name, req.files.image.mimetype);
-    }
-
-    await query(
-      "INSERT INTO missions (title, xp_reward, requires_upload, image_url) VALUES ($1,$2,$3,$4)",
-      [
-        req.body.title,
-        req.body.xp_reward,
-        req.body.requires_upload === "on",
-        imageUrl
-      ]
-    );
-
-    res.json({ ok: true });
-  } catch (err) {
-    console.log("Mission Upload Fehler:", err);
-    res.status(500).json({ error: "Mission konnte nicht gespeichert werden" });
-  }
-});
-
-app.delete("/api/admin/missions/:id", async (req, res) => {
-  await query("DELETE FROM missions WHERE id=$1", [req.params.id]);
-  res.json({ ok: true });
-});
-
-// -------------------------------------------------------
-// ADMIN: BONUSKARTEN
-// -------------------------------------------------------
-app.get("/api/admin/bonus", async (req, res) => {
-  const r = await query("SELECT * FROM bonus_cards ORDER BY id DESC");
-  res.json(r.rows);
-});
-
-app.post("/api/admin/bonus", async (req, res) => {
-  try {
-    let imageUrl = null;
-    if (req.files?.image) {
-      imageUrl = await uploadToR2(req.files.image.data, req.files.image.name, req.files.image.mimetype);
-    }
-
-    await query(
-      "INSERT INTO bonus_cards (title, xp_cost, image_url) VALUES ($1,$2,$3)",
-      [req.body.title, req.body.xp_cost, imageUrl]
-    );
-
-    res.json({ ok: true });
-  } catch (err) {
-    console.log("Bonus Upload Fehler:", err);
-    res.status(500).json({ error: "Bonuskarte konnte nicht gespeichert werden" });
-  }
-});
-
-app.delete("/api/admin/bonus/:id", async (req, res) => {
-  await query("DELETE FROM bonus_cards WHERE id=$1", [req.params.id]);
-  res.json({ ok: true });
-});
-
-// -------------------------------------------------------
-// ADMIN: CHARACTERS
-// -------------------------------------------------------
-app.get("/api/admin/characters", async (req, res) => {
-  const r = await query("SELECT * FROM characters ORDER BY id DESC");
-  res.json(r.rows);
-});
-
-app.post("/api/admin/characters", async (req, res) => {
-  try {
-    let imageUrl = null;
-    if (req.files?.image) {
-      imageUrl = await uploadToR2(req.files.image.data, req.files.image.name, req.files.image.mimetype);
-    }
-
-    await query(
-      "INSERT INTO characters (name, image_url) VALUES ($1,$2)",
-      [req.body.name, imageUrl]
-    );
-
-    res.json({ ok: true });
-  } catch (err) {
-    console.log("Character Upload Fehler:", err);
-    res.status(500).json({ error: "Charakter konnte nicht gespeichert werden" });
-  }
-});
-
-app.delete("/api/admin/characters/:id", async (req, res) => {
-  await query("DELETE FROM characters WHERE id=$1", [req.params.id]);
-  res.json({ ok: true });
-});
-
-// -------------------------------------------------------
-// ADMIN: LEVELS (final fix!)
-// -------------------------------------------------------
-app.get("/api/admin/levels", async (req, res) => {
-  try {
-    const r = await query("SELECT * FROM levels ORDER BY xp_required ASC");
-    res.json(r.rows);
-  } catch (err) {
-    console.log("Level Load Error:", err);
-    res.status(500).json([]);
-  }
-});
-
-app.post("/api/admin/levels", async (req, res) => {
-  try {
-    const { name, xp_required, description } = req.body;
-
-    await query(
-      "INSERT INTO levels (name, xp_required, description) VALUES ($1,$2,$3)",
-      [name, xp_required, description || null]
-    );
-
-    res.json({ ok: true });
-  } catch (err) {
-    console.log("Level Insert Error:", err);
-    res.status(500).json({ error: "Level konnte nicht gespeichert werden" });
-  }
-});
-
-app.delete("/api/admin/levels/:id", async (req, res) => {
+app.delete("/api/admin/levels/:id", requireAdmin, async (req, res) => {
   await query("DELETE FROM levels WHERE id=$1", [req.params.id]);
   res.json({ ok: true });
 });
 
-// -------------------------------------------------------
+// -----------------------------
+// ADMIN – CHARACTERS
+// -----------------------------
+app.get("/api/admin/characters", requireAdmin, async (req, res) => {
+  const r = await query("SELECT * FROM characters ORDER BY id ASC");
+  res.json(r.rows);
+});
+
+app.post(
+  "/api/admin/characters",
+  requireAdmin,
+  upload.single("image"),
+  async (req, res) => {
+    const name = req.body.name;
+    if (!name) return res.status(400).json({ error: "Name fehlt" });
+
+    let img = null;
+    if (req.file) img = await uploadToR2(req.file, "characters");
+
+    const r = await query(
+      "INSERT INTO characters(name,image_url) VALUES($1,$2) RETURNING *",
+      [name, img]
+    );
+
+    res.json(r.rows[0]);
+  }
+);
+
+app.delete("/api/admin/characters/:id", requireAdmin, async (req, res) => {
+  await query("DELETE FROM characters WHERE id=$1", [req.params.id]);
+  res.json({ ok: true });
+});
+
+// -----------------------------
+// ADMIN – BONUS CARDS
+// -----------------------------
+app.get("/api/admin/bonuscards", requireAdmin, async (req, res) => {
+  const r = await query("SELECT * FROM bonuscards ORDER BY id ASC");
+  res.json(r.rows);
+});
+
+app.post(
+  "/api/admin/bonuscards",
+  requireAdmin,
+  upload.single("image"),
+  async (req, res) => {
+    let img = null;
+    if (req.file) img = await uploadToR2(req.file, "bonuscards");
+
+    const r = await query(
+      "INSERT INTO bonuscards(name,image_url) VALUES($1,$2) RETURNING *",
+      [req.body.name, img]
+    );
+    res.json(r.rows[0]);
+  }
+);
+
+app.delete("/api/admin/bonuscards/:id", requireAdmin, async (req, res) => {
+  await query("DELETE FROM bonuscards WHERE id=$1", [req.params.id]);
+  res.json({ ok: true });
+});
+
+// -----------------------------
+// ADMIN – MISSIONS
+// -----------------------------
+app.get("/api/admin/missions", requireAdmin, async (req, res) => {
+  const r = await query("SELECT * FROM missions ORDER BY id ASC");
+  res.json(r.rows);
+});
+
+app.post(
+  "/api/admin/missions",
+  requireAdmin,
+  upload.single("image"),
+  async (req, res) => {
+    const { title, xp } = req.body;
+    if (!title) return res.status(400).json({ error: "Titel fehlt" });
+
+    let img = null;
+    if (req.file) img = await uploadToR2(req.file, "missions");
+
+    const r = await query(
+      "INSERT INTO missions(title,xp,image_url) VALUES($1,$2,$3) RETURNING *",
+      [title, xp, img]
+    );
+    res.json(r.rows[0]);
+  }
+);
+
+app.delete("/api/admin/missions/:id", requireAdmin, async (req, res) => {
+  await query("DELETE FROM missions WHERE id=$1", [req.params.id]);
+  res.json({ ok: true });
+});
+
+// -----------------------------
+// FALLBACK – ALWAYS RETURN login/admin/student
+// -----------------------------
+app.get("/", (req, res) => res.redirect("/login.html"));
+
+app.get("*", (req, res) =>
+  res.sendFile(path.resolve("public", "login.html"))
+);
+
+// -----------------------------
 app.listen(8080, () => console.log("Server läuft auf Port 8080"));
