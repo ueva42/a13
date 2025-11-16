@@ -12,82 +12,57 @@
       padding: 2rem;
       margin: 0;
     }
-
     h1 { color: #80f0d0; margin-top: 0; }
+    h2, h3 { color: #80f0d0; }
 
     .logout-btn {
-      background: #6a4df4;
-      color: white;
+      background: #6a4df4; color: white;
       padding: 0.6rem 1rem;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      margin-bottom: 2rem;
+      border: none; border-radius: 6px;
+      cursor: pointer; margin-bottom: 2rem;
     }
 
     .box {
       background: #14141c;
-      padding: 1.5rem;
-      border-radius: 12px;
+      padding: 1.5rem; border-radius: 12px;
       margin-bottom: 2.5rem;
       box-shadow: 0 0 12px rgba(0,0,0,0.5);
     }
 
-    h2, h3 { color: #80f0d0; margin-top: 0; }
-
     input, select {
-      width: 100%;
-      padding: 0.5rem;
-      margin-bottom: 1rem;
-      background: #0f0f14;
-      color: white;
-      border: 1px solid #333;
-      border-radius: 6px;
+      width: 100%; padding: 0.5rem; margin-bottom: 1rem;
+      background: #0f0f14; color: white;
+      border: 1px solid #333; border-radius: 6px;
       box-sizing: border-box;
     }
 
     button {
-      padding: 0.5rem 1rem;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
+      padding: 0.5rem 1rem; border: none;
+      border-radius: 6px; cursor: pointer;
     }
 
     .btn-primary { background: #6a4df4; color: white; }
     .btn-danger { background: #3a1010; color: #ffb3b3; }
 
     .entry {
-      padding: 0.6rem;
-      background: #1a1a24;
-      margin-bottom: 0.5rem;
-      border-radius: 6px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 0.5rem;
+      padding: 0.6rem; background: #1a1a24;
+      margin-bottom: 0.5rem; border-radius: 6px;
+      display: flex; justify-content: space-between;
+      align-items: center; gap: 0.5rem;
     }
 
     img.preview-img {
-      width: 120px;
-      border-radius: 6px;
+      width: 120px; border-radius: 6px;
       margin-top: 0.5rem;
     }
 
     #upload-popup {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: rgba(0,0,0,0.7);
-      padding: 3rem;
-      box-sizing: border-box;
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.7); padding: 3rem;
     }
-
     #upload-popup-inner {
-      background: #14141c;
-      padding: 2rem;
-      border-radius: 10px;
-      max-width: 600px;
-      margin: auto;
+      background: #14141c; padding: 2rem;
+      border-radius: 10px; max-width: 600px; margin: auto;
     }
   </style>
 </head>
@@ -97,9 +72,7 @@
 <button class="logout-btn" onclick="logout()">Logout</button>
 
 
-<!-- =============================================================== -->
 <!-- KLASSEN -->
-<!-- =============================================================== -->
 <div class="box">
   <h2>Klassen</h2>
 
@@ -110,9 +83,7 @@
 </div>
 
 
-<!-- =============================================================== -->
 <!-- SCHÜLER -->
-<!-- =============================================================== -->
 <div class="box">
   <h2>Schüler:innen</h2>
 
@@ -127,9 +98,7 @@
 </div>
 
 
-<!-- =============================================================== -->
-<!-- XP-VERGABE -->
-<!-- =============================================================== -->
+<!-- XP -->
 <div class="box">
   <h2>XP-Vergabe</h2>
 
@@ -146,22 +115,19 @@
   <h3>Manuelle XP</h3>
   <input id="xp-amount" type="number" placeholder="XP eingeben">
   <button class="btn-primary" onclick="giveXpToSelected()">XP an ausgewählte</button>
-  <button class="btn-primary" onclick="giveXpToClass()">XP an Klasse</button>
+  <button class="btn-primary" onclick="giveXpToClass()">XP an gesamte Klasse</button>
 
   <hr style="margin:1.5rem 0; border-color:#333;">
 
   <h3>XP durch Mission</h3>
-
   <select id="mission-select"></select>
 
   <button class="btn-primary" onclick="giveMissionXpToSelected()">Mission an ausgewählte</button>
-  <button class="btn-primary" onclick="giveMissionXpToClass()">Mission an Klasse</button>
+  <button class="btn-primary" onclick="giveMissionXpToClass()">Mission an gesamte Klasse</button>
 </div>
 
 
-<!-- =============================================================== -->
 <!-- MISSIONEN -->
-<!-- =============================================================== -->
 <div class="box">
   <h2>Missionen</h2>
 
@@ -170,7 +136,7 @@
     <input name="xp_reward" type="number" placeholder="XP">
     <label>
       <input type="checkbox" name="requires_upload">
-      Schüler:innen müssen Bild hochladen
+      Bild-Upload benötigt
     </label>
     <input type="file" name="image">
     <button class="btn-primary" type="submit">Mission anlegen</button>
@@ -180,9 +146,7 @@
 </div>
 
 
-<!-- =============================================================== -->
-<!-- BONUSKARTEN -->
-<!-- =============================================================== -->
+<!-- BONUS -->
 <div class="box">
   <h2>Bonus-Karten</h2>
 
@@ -197,9 +161,7 @@
 </div>
 
 
-<!-- =============================================================== -->
-<!-- CHARAKTERE -->
-<!-- =============================================================== -->
+<!-- CHARACTERS -->
 <div class="box">
   <h2>Charaktere</h2>
 
@@ -213,15 +175,13 @@
 </div>
 
 
-<!-- =============================================================== -->
 <!-- LEVEL -->
-<!-- =============================================================== -->
 <div class="box">
   <h2>Level</h2>
 
   <form id="level-form">
-    <input name="name" placeholder="Levelname (z.B. Lehrling)">
-    <input name="required_xp" type="number" placeholder="XP ab (z.B. 0)">
+    <input name="name" placeholder="Levelname">
+    <input name="required_xp" type="number" placeholder="XP-Schwelle">
     <button class="btn-primary" type="submit">Level anlegen</button>
   </form>
 
@@ -229,9 +189,7 @@
 </div>
 
 
-<!-- =============================================================== -->
 <!-- UPLOAD POPUP -->
-<!-- =============================================================== -->
 <div id="upload-popup">
   <div id="upload-popup-inner">
     <h2>Uploads</h2>
@@ -241,10 +199,7 @@
 </div>
 
 
-
-
 <script>
-// Sicherheitscheck
 if (localStorage.getItem("role") !== "admin") {
   location.href = "login.html";
 }
@@ -260,27 +215,24 @@ function fixUrl(url) {
   return window.location.origin + url;
 }
 
-
-/* ================================
-   KLASSEN
-================================ */
+// ================================================
+// KLASSEN
+// ================================================
 async function loadClasses() {
   const res = await fetch("/api/admin/classes");
   const data = await res.json();
 
-  const studentSel = document.getElementById("student-class-select");
-  const xpSel = document.getElementById("xp-class-select");
-  const classList = document.getElementById("class-list");
+  const s1 = document.getElementById("student-class-select");
+  const s2 = document.getElementById("xp-class-select");
+  const list = document.getElementById("class-list");
 
-  studentSel.innerHTML = "";
-  xpSel.innerHTML = "";
-  classList.innerHTML = "";
+  s1.innerHTML = ""; s2.innerHTML = ""; list.innerHTML = "";
 
   data.classes.forEach(c => {
-    studentSel.innerHTML += `<option value="${c.id}">${c.name}</option>`;
-    xpSel.innerHTML += `<option value="${c.id}">${c.name}</option>`;
+    s1.innerHTML += `<option value="${c.id}">${c.name}</option>`;
+    s2.innerHTML += `<option value="${c.id}">${c.name}</option>`;
 
-    classList.innerHTML += `
+    list.innerHTML += `
       <div class="entry">
         ${c.name}
         <button class="btn-danger" onclick="deleteClass(${c.id})">Löschen</button>
@@ -296,9 +248,9 @@ async function createClass() {
   if (!name) return;
 
   await fetch("/api/admin/classes", {
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({ name })
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ name })
   });
 
   document.getElementById("class-name").value = "";
@@ -311,12 +263,11 @@ async function deleteClass(id) {
 }
 
 
-/* ================================
-   SCHÜLER
-================================ */
+// ================================================
+// SCHÜLER
+// ================================================
 async function loadStudents() {
   const classId = document.getElementById("student-class-select").value;
-
   const res = await fetch(`/api/admin/students/${classId}`);
   const students = await res.json();
 
@@ -342,7 +293,7 @@ async function createStudent() {
   await fetch("/api/admin/students", {
     method:"POST",
     headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({ name, password:pass, class_id })
+    body: JSON.stringify({ name, password: pass, class_id })
   });
 
   document.getElementById("student-name").value = "";
@@ -359,12 +310,11 @@ async function deleteStudent(id) {
 }
 
 
-/* ================================
-   XP LISTE
-================================ */
+// ================================================
+// XP LIST
+// ================================================
 async function loadXpList() {
   const classId = document.getElementById("xp-class-select").value;
-
   const res = await fetch(`/api/admin/students/${classId}`);
   const students = await res.json();
 
@@ -384,8 +334,8 @@ async function loadXpList() {
 }
 
 document.getElementById("xp-select-all").onchange = () => {
-  const checked = document.getElementById("xp-select-all").checked;
-  document.querySelectorAll(".xp-checkbox").forEach(cb => cb.checked = checked);
+  const c = document.getElementById("xp-select-all").checked;
+  document.querySelectorAll(".xp-checkbox").forEach(cb => cb.checked = c);
 };
 
 function getSelectedIds() {
@@ -393,20 +343,19 @@ function getSelectedIds() {
 }
 
 
-/* ================================
-   XP VERGEBEN
-================================ */
+// ================================================
+// XP VERGEBEN
+// ================================================
 async function giveXpToSelected() {
   const ids = getSelectedIds();
   const amount = Number(document.getElementById("xp-amount").value);
-
-  if (ids.length === 0 || isNaN(amount)) return;
+  if (!amount || ids.length === 0) return;
 
   for (let id of ids) {
     await fetch("/api/admin/xp/student", {
       method:"POST",
       headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({ student_id:id, amount })
+      body: JSON.stringify({ student_id:id, amount })
     });
   }
 
@@ -417,21 +366,19 @@ async function giveXpToClass() {
   const class_id = document.getElementById("xp-class-select").value;
   const amount = Number(document.getElementById("xp-amount").value);
 
-  if (isNaN(amount)) return;
-
   await fetch("/api/admin/xp/class", {
     method:"POST",
     headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({ class_id, amount })
+    body: JSON.stringify({ class_id, amount })
   });
 
   loadXpList();
 }
 
 
-/* ================================
-   MISSION-XP
-================================ */
+// ================================================
+// MISSIONEN
+// ================================================
 async function loadMissionSelect() {
   const res = await fetch("/api/admin/missions");
   const missions = await res.json();
@@ -445,14 +392,14 @@ async function loadMissionSelect() {
 }
 
 async function giveMissionXpToSelected() {
-  const student_ids = getSelectedIds();
+  const ids = getSelectedIds();
   const mission_id = document.getElementById("mission-select").value;
-  if (!student_ids.length) return;
+  if (ids.length === 0) return;
 
   await fetch("/api/admin/xp/mission-students", {
     method:"POST",
     headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({ student_ids, mission_id })
+    body: JSON.stringify({ student_ids:ids, mission_id })
   });
 
   loadXpList();
@@ -465,16 +412,12 @@ async function giveMissionXpToClass() {
   await fetch("/api/admin/xp/mission-class", {
     method:"POST",
     headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({ mission_id, class_id })
+    body: JSON.stringify({ class_id, mission_id })
   });
 
   loadXpList();
 }
 
-
-/* ================================
-   MISSIONEN
-================================ */
 async function loadMissions() {
   const res = await fetch("/api/admin/missions");
   const missions = await res.json();
@@ -501,11 +444,7 @@ document.getElementById("mission-form").onsubmit = async (e) => {
   e.preventDefault();
 
   const data = new FormData(document.getElementById("mission-form"));
-
-  await fetch("/api/admin/missions", {
-    method:"POST",
-    body:data
-  });
+  await fetch("/api/admin/missions", { method:"POST", body:data });
 
   document.getElementById("mission-form").reset();
   loadMissions();
@@ -517,9 +456,9 @@ async function deleteMission(id) {
 }
 
 
-/* ================================
-   BONUSKARTEN
-================================ */
+// ================================================
+// BONUS
+// ================================================
 async function loadBonus() {
   const res = await fetch("/api/admin/bonus");
   const cards = await res.json();
@@ -544,7 +483,6 @@ document.getElementById("bonus-form").onsubmit = async (e) => {
   e.preventDefault();
 
   const data = new FormData(document.getElementById("bonus-form"));
-
   await fetch("/api/admin/bonus", { method:"POST", body:data });
 
   document.getElementById("bonus-form").reset();
@@ -557,9 +495,9 @@ async function deleteBonus(id) {
 }
 
 
-/* ================================
-   CHARAKTERE
-================================ */
+// ================================================
+// CHARACTERS
+// ================================================
 async function loadCharacters() {
   const res = await fetch("/api/admin/characters");
   const chars = await res.json();
@@ -583,11 +521,7 @@ document.getElementById("character-form").onsubmit = async (e) => {
   e.preventDefault();
 
   const data = new FormData(document.getElementById("character-form"));
-
-  await fetch("/api/admin/characters", {
-    method:"POST",
-    body:data
-  });
+  await fetch("/api/admin/characters", { method:"POST", body:data });
 
   document.getElementById("character-form").reset();
   loadCharacters();
@@ -599,9 +533,9 @@ async function deleteCharacter(id) {
 }
 
 
-/* ================================
-   LEVEL (mit 0-XP-Fix)
-================================ */
+// ================================================
+// LEVEL
+// ================================================
 async function loadLevels() {
   const res = await fetch("/api/admin/levels");
   const levels = await res.json();
@@ -624,22 +558,13 @@ async function loadLevels() {
 document.getElementById("level-form").onsubmit = async (e) => {
   e.preventDefault();
 
-  const form = document.getElementById("level-form");
-  const name = form.name.value.trim();
-  const xp_raw = form.required_xp.value.trim();
-
-  // FIX: 0 ist erlaubt!
-  if (!name || xp_raw === "" || xp_raw === null || isNaN(Number(xp_raw))) return;
-
-  const required_xp = Number(xp_raw);
-
+  const data = new FormData(document.getElementById("level-form"));
   await fetch("/api/admin/levels", {
     method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({ name, required_xp })
+    body: data
   });
 
-  form.reset();
+  document.getElementById("level-form").reset();
   loadLevels();
 };
 
@@ -648,28 +573,23 @@ async function deleteLevel(id) {
   loadLevels();
 }
 
-
-/* ================================
-   UPLOAD POPUP
-================================ */
-async function openUploads(studentId) {
-  const res = await fetch(`/api/admin/uploads/${studentId}`);
+// ================================================
+// Uploads Popup
+// ================================================
+async function openUploads(id) {
+  const res = await fetch(`/api/admin/uploads/${id}`);
   const uploads = await res.json();
 
   const box = document.getElementById("upload-list");
   box.innerHTML = "";
 
-  if (uploads.length === 0) {
-    box.innerHTML = "<p>Keine Uploads vorhanden.</p>";
-  } else {
-    uploads.forEach(u => {
-      box.innerHTML += `
-        <div class="entry">
-          <a href="${fixUrl(u.file_url)}" target="_blank" style="color:#80f0d0;">Bild öffnen</a>
-          <button class="btn-danger" onclick="deleteUpload(${u.id}, ${studentId})">Löschen</button>
-        </div>`;
-    });
-  }
+  uploads.forEach(u => {
+    box.innerHTML += `
+      <div class="entry">
+        <a href="${fixUrl(u.file_url)}" target="_blank" style="color:#80f0d0;">Bild öffnen</a>
+        <button class="btn-danger" onclick="deleteUpload(${u.id},${id})">Löschen</button>
+      </div>`;
+  });
 
   document.getElementById("upload-popup").style.display = "block";
 }
@@ -678,15 +598,15 @@ function closeUploadPopup() {
   document.getElementById("upload-popup").style.display = "none";
 }
 
-async function deleteUpload(id, studentId) {
-  await fetch(`/api/admin/uploads/${id}`, { method:"DELETE" });
-  openUploads(studentId);
+async function deleteUpload(upload_id, student_id) {
+  await fetch(`/api/admin/uploads/${upload_id}`, { method:"DELETE" });
+  openUploads(student_id);
 }
 
 
-/* ================================
-   INIT
-================================ */
+// ================================================
+// INIT
+// ================================================
 loadClasses();
 loadMissions();
 loadBonus();
